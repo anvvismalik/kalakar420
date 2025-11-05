@@ -1,0 +1,109 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* 🛠️ FINAL THEME: Darker Earthy Shades */
+    --background: 35 35% 90%; /* Richer Sand/Light Beige */
+    --foreground: 240 10% 10%; /* Darker Text */
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 10%;
+
+    --primary: 20 70% 40%; /* Deep Terracotta / Rust */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 80 25% 40%; /* Deep Olive / Forest Green */
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 35 25% 80%;
+    --muted-foreground: 240 5% 40%;
+
+    --accent: 40 50% 55%; /* Rich Mustard / Dark Gold */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 35 20% 70%;
+    --input: 35 20% 80%;
+    --ring: 20 70% 40%;
+
+    --radius: 0.75rem;
+    
+    /* Updated gradients with new deeper palette */
+    --gradient-primary: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)), hsl(var(--accent)));
+    --gradient-card: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 50%, hsl(var(--accent)) 100%);
+    --shadow-glow: 0 8px 32px -4px hsl(20 70% 40% / 0.3);
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 240 10% 10%;
+    --foreground: 270 30% 95%;
+
+    --card: 240 10% 13%;
+    --card-foreground: 270 30% 95%;
+
+    --popover: 240 10% 13%;
+    --popover-foreground: 270 30% 95%;
+
+    --primary: 20 70% 40%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 80 25% 40%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 240 10% 20%;
+    --muted-foreground: 270 10% 60%;
+
+    --accent: 40 50% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 62.8% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 10% 20%;
+    --input: 240 10% 20%;
+    --ring: 20 70% 40%;
+  }
+
+  /* 🛠️ Final: Subtler background pattern (Phulkari style) */
+  .kalakaar-bg-pattern {
+    background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23a18a7a' fill-opacity='0.08'%3E%3Cpath d='M36 34.25V42h-8v-7.75c1.4-.2 2.6-.2 4 0zm10-10.75v10.5c-2.4-.2-4.6-.2-7 0V23.5h7zm10-10.5v11c-3.4-.2-6.6-.2-10 0V12.25h10zM10 23.5v10.5c-2.4-.2-4.6-.2-7 0V23.5h7zM0 12.25v11c-3.4-.2-6.6-.2-10 0V12.25h10zM20 12.25v11c-3.4-.2-6.6-.2-10 0V12.25h10zM50 23.5v10.5c-2.4-.2-4.6-.2-7 0V23.5h7zM60 12.25v11c-3.4-.2-6.6-.2-10 0V12.25h10z'/%3E%3Cpath d='M36 34.25V42h-8v-7.75c1.4-.2 2.6-.2 4 0zm10-10.75v10.5c-2.4-.2-4.6-.2-7 0V23.5h7zm10-10.5v11c-3.4-.2-6.6-.2-10 0V12.25h10zM10 23.5v10.5c-2.4-.2-4.6-.2-7 0V23.5h7zM0 12.25v11c-3.4-.2-6.6-.2-10 0V12.25h10zM20 12.25v11c-3.4-.2-6.6-.2-10 0V12.25h10zM50 23.5v10.5c-2.4-.2-4.6-.2-7 0V23.5h7zM60 12.25v11c-3.4-.2-6.6-.2-10 0V12.25h10z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+    background-color: hsl(var(--background));
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}

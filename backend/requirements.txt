@@ -1,0 +1,14 @@
+flask
+flask-cors
+flask-sqlalchemy
+werkzeug
+python-dotenv
+google-generativeai
+torch
+transformers
+pyttsx3
+TTS
+requests
+soundfile
+librosa
+imageio-ffmpeg

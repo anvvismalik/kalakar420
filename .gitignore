@@ -1,0 +1,69 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.env
+backend/credentials.json
+
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+
+# Model and transformer caches
+.cache/
+models/
+*.safetensors
+*.bin
+
+# System / IDE
+.DS_Store
+.idea/
+.vscode/
+# --- FRONTEND ---
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+frontend/.env
+
+# --- BACKEND ---
+backend/.venv/
+backend/__pycache__/
+backend/.cache/
+backend/instance/
+backend/*.db
+backend/*.sqlite
+backend/.env
+backend/credentials.json
+backend/*.bin
+backend/*.safetensors
+backend/*.dll
+backend/*.exe
+backend/.env
+frontend/.env
+# --- SYSTEM ---
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
