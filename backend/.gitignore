@@ -7,7 +7,13 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+venv/
+.venv/
+.venv2/
+
+# Build outputs
 dist
 dist-ssr
 *.local
@@ -18,14 +24,36 @@ dist-ssr
 .idea
 .DS_Store
 *.suo
-*.ntvs*
+.ntvs
 *.njsproj
 *.sln
 *.sw?
-# .gitignore
-.env
-venv/
-__pycache__/
 
-# Google Cloud service account key files
-*.json
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Python
+_pycache_/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Backend generated files/folders
+uploads/
+audio_responses/
+generated_images/
+instance/
+.cache/
+
+# Google Cloud credentials - IMPORTANT!
+credentials.json
+*-credentials.json
+service-account*.json
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3

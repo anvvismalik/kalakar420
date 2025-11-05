@@ -12,3 +12,4 @@ requests
 soundfile
 librosa
 imageio-ffmpeg
+gunicorn

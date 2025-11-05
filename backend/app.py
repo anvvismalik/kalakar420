@@ -78,6 +78,9 @@ app.config['PERMANENT_SESSION_LIFETIME'] = 86400
 CORS(app, 
      supports_credentials=True, 
      origins=[
+         # Production frontend (we'll add the actual URL after Vercel deployment)
+         "https://*.vercel.app",  # Allows all Vercel preview/production deployments
+         # Development origins
          "http://localhost:5173",
          "http://127.0.0.1:5173",
          "http://localhost:3000",
@@ -1098,6 +1101,9 @@ def request_entity_too_large(error):
 def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
+@app.route('/health')
+def health():
+    return {'status': 'healthy'}, 200
 
 # ==================== STARTUP ====================
 
