@@ -17,3 +17,8 @@ google-cloud-speech
 google-auth
 google-api-python-client
 google-auth-oauthlib
+google-cloud-speech
+google-cloud-texttospeech
+google-api-python-client
+google-auth
+google-auth-oauthlib
