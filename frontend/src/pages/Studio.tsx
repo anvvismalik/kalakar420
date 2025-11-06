@@ -20,7 +20,8 @@ import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useMicrophoneRecorder } from '@/hooks/useMicrophoneRecorder';
 
-const API_BASE_URL = 'http://127.0.0.1:5001/api';
+// const API_BASE_URL = 'http://127.0.0.1:5001/api';
+const API_BASE_URL = 'https://kalakar420.onrender.com/api';
 
 interface CollectedInfo {
     [key: string]: { punjabi: string, english: string };
@@ -113,7 +114,8 @@ const Studio: React.FC = () => {
             return;
         }
 
-        const fullUrl = `http://127.0.0.1:5001${relativeUrl}`; 
+        // const fullUrl = `http://127.0.0.1:5001${relativeUrl}`; 
+        const fullUrl = relativeUrl;
         
         const handleEnd = () => {
              setIsSpeaking(false);
