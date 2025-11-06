@@ -11,9 +11,7 @@ import {
   Star,
   ArrowLeft,
   CheckCircle,
-  Image as ImageIcon,
-  Download,
-  Wand2
+  Image as ImageIcon
 } from "lucide-react";
 import { Button } from '@/components/ui/button'; 
 import { Input } from '@/components/ui/input';
@@ -36,19 +34,10 @@ interface PlatformContent {
     error?: boolean;
 }
 
-interface GeneratedImage {
-    url: string;
-    filename: string;
-    variation: number;
-    prompt?: string;
-    size?: number;
-}
-
 interface GeneratedContent {
     success: boolean;
     platforms: string[];
     content: { [key: string]: PlatformContent };
-    generated_images?: GeneratedImage[];
     model_used: string;
 }
 
@@ -62,6 +51,11 @@ interface Platform {
 }
 
 const Studio: React.FC = () => {
+    // --- Auth State ---
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+    const [isCheckingAuth, setIsCheckingAuth] = useState<boolean>(true);
+    const [authError, setAuthError] = useState<string>('');
+    
     // --- Conversation State ---
     const [sessionId, setSessionId] = useState<string | null>(null);
     const [aiQuestion, setAiQuestion] = useState<string>('');
@@ -85,22 +79,21 @@ const Studio: React.FC = () => {
     // --- Generated Content State ---
     const [generatedContent, setGeneratedContent] = useState<GeneratedContent | null>(null);
     const [isGenerating, setIsGenerating] = useState(false);
-    
-    // --- Image Generation State ---
-    const [generateImages, setGenerateImages] = useState<boolean>(true);
-    const [isGeneratingImages, setIsGeneratingImages] = useState(false);
-    const [generatedImages, setGeneratedImages] = useState<GeneratedImage[]>([]);
 
     // --- Audio Playback Ref ---
     const audioRef = useRef<HTMLAudioElement | null>(null);
     
+    // Initialize audio element once on mount
     useEffect(() => {
         if (!audioRef.current) {
             audioRef.current = new Audio();
         }
+        
+        // Fetch available platforms
         fetchPlatforms();
     }, []); 
 
+    // Fetch available platforms from backend
     const fetchPlatforms = async () => {
         try {
             const response = await fetch(`${API_BASE_URL}/platforms`);
@@ -113,6 +106,7 @@ const Studio: React.FC = () => {
         }
     };
 
+    // --- Core Playback Logic ---
     const playAudio = useCallback((relativeUrl: string | null) => {
         if (!relativeUrl || !audioRef.current) {
             setIsSpeaking(false);
@@ -133,11 +127,17 @@ const Studio: React.FC = () => {
 
         if (audioRef.current) {
              audioRef.current.src = fullUrl;
+             
+             // Clean up previous listeners
              audioRef.current.removeEventListener('ended', handleEnd);
              audioRef.current.removeEventListener('error', handleError);
+             
+             // Set new listeners
              audioRef.current.addEventListener('ended', handleEnd);
              audioRef.current.addEventListener('error', handleError);
+
              setIsSpeaking(true);
+
              audioRef.current.play().catch(e => {
                  console.warn("Autoplay blocked:", e);
                  setIsSpeaking(false);
@@ -145,16 +145,19 @@ const Studio: React.FC = () => {
         }
     }, []);
 
+    // --- Mic Recorder Setup ---
     const handleRecordedAudio = useCallback((audioBlob: Blob) => {
         sendUserAudio(audioBlob);
     }, [sessionId]);
 
     const { isRecording, startRecording, stopRecording, error: micError } = useMicrophoneRecorder(handleRecordedAudio);
 
+    // Display mic error
     useEffect(() => {
         if (micError) setError(micError);
     }, [micError]);
 
+    // --- Conversation Handlers ---
     const startConversation = async () => {
         try {
             setError('');
@@ -164,14 +167,19 @@ const Studio: React.FC = () => {
             });
             
             if (!response.ok) {
+                if (response.status === 401) {
+                    throw new Error("Please log in to continue.");
+                }
                 throw new Error(`Start failed: ${response.statusText}`);
             }
             
             const data = await response.json();
+
             setSessionId(data.session_id);
             setAiQuestion(data.question);
             setAiQuestionEn(data.question_en || data.question);
             setProgress(data.progress);
+            
             playAudio(data.audio_url);
 
         } catch (err) {
@@ -200,6 +208,7 @@ const Studio: React.FC = () => {
             if (!response.ok) throw new Error(`Response failed: ${response.statusText}`);
             
             const data = await response.json();
+
             setIsTranscribing(false);
             
             if (data.collected_info) {
@@ -225,76 +234,20 @@ const Studio: React.FC = () => {
         }
     };
     
+    // --- Image Handling ---
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             setImageFile(e.target.files[0]);
         }
     };
 
+    // --- Platform Selection ---
     const togglePlatform = (platformId: string) => {
         setSelectedPlatforms(prev => 
             prev.includes(platformId) 
                 ? prev.filter(p => p !== platformId)
                 : [...prev, platformId]
         );
-    };
-
-    // NEW: Separate function for image generation
-    const generateProductImages = async (uploadedImageUrl: string) => {
-        if (!sessionId || !generateImages) {
-            console.log("Skipping image generation:", { sessionId, generateImages });
-            return [];
-        }
-
-        console.log("=== STARTING IMAGE GENERATION ===");
-        console.log("Session ID:", sessionId);
-        console.log("Reference Image URL:", uploadedImageUrl);
-
-        setIsGeneratingImages(true);
-
-        try {
-            const payload = {
-                session_id: sessionId,
-                num_images: 3,
-                reference_image_url: uploadedImageUrl
-            };
-
-            console.log("Sending request to /api/generate-images");
-            console.log("Payload:", JSON.stringify(payload, null, 2));
-
-            const response = await fetch(`${API_BASE_URL}/generate-images`, {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            console.log("Response status:", response.status);
-
-            if (!response.ok) {
-                const errorData = await response.json();
-                console.error("Image generation failed:", errorData);
-                throw new Error(errorData.error || 'Image generation failed');
-            }
-
-            const imageData = await response.json();
-            console.log("Image generation SUCCESS!");
-            console.log("Generated images:", imageData.generated_images);
-
-            if (imageData.success && imageData.generated_images) {
-                setGeneratedImages(imageData.generated_images);
-                return imageData.generated_images;
-            }
-
-            return [];
-
-        } catch (err) {
-            console.error("IMAGE GENERATION ERROR:", err);
-            setError(`Image generation warning: ${err instanceof Error ? err.message : 'Unknown error'}`);
-            return [];
-        } finally {
-            setIsGeneratingImages(false);
-        }
     };
 
     const uploadImageAndGenerate = async () => {
@@ -309,19 +262,12 @@ const Studio: React.FC = () => {
         }
         
         try {
-            console.log("=== STARTING CONTENT GENERATION PROCESS ===");
-            console.log("Session ID:", sessionId);
-            console.log("Selected Platforms:", selectedPlatforms);
-            console.log("Generate Images:", generateImages);
-
             setIsUploading(true);
             setError('');
 
-            // STEP 1: Upload image
+            // Upload image first
             const formData = new FormData();
             formData.append('image', imageFile);
-
-            console.log("Step 1: Uploading image...");
 
             const uploadResponse = await fetch(`${API_BASE_URL}/upload_image`, {
                 method: 'POST',
@@ -335,35 +281,22 @@ const Studio: React.FC = () => {
             setImageUrl(uploadData.image_url);
             setIsUploading(false);
 
-            console.log("Step 1: Image uploaded successfully:", uploadData.image_url);
-
-            // STEP 2: Generate AI product images (if enabled)
-            let aiGeneratedImages: GeneratedImage[] = [];
-            if (generateImages) {
-                console.log("Step 2: Generating AI product images...");
-                aiGeneratedImages = await generateProductImages(uploadData.image_url);
-                console.log(`Step 2: Generated ${aiGeneratedImages.length} images`);
-            } else {
-                console.log("Step 2: Skipping AI image generation (disabled by user)");
-            }
-
-            // STEP 3: Generate social media content
-            console.log("Step 3: Generating social media content...");
+            // Generate content with selected platforms
             setIsGenerating(true);
-           
-            const payload = { 
-                session_id: sessionId,
-                image_url: uploadData.image_url,
-                platforms: selectedPlatforms
-            };
-
-            console.log("Sending to /api/conversation/generate:", payload);
-
+            
+            console.log("Generating content for platforms:", selectedPlatforms);
+            console.log("Session ID:", sessionId);
+            console.log("Image URL:", uploadData.image_url);
+            
             const generateResponse = await fetch(`${API_BASE_URL}/conversation/generate`, {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({ 
+                    session_id: sessionId,
+                    image_url: uploadData.image_url,
+                    platforms: selectedPlatforms  // THIS WAS MISSING!
+                })
             });
 
             if (!generateResponse.ok) {
@@ -372,28 +305,15 @@ const Studio: React.FC = () => {
             }
             
             const contentData = await generateResponse.json();
-            
-            // Add generated images to the content data
-            if (aiGeneratedImages.length > 0) {
-                contentData.generated_images = aiGeneratedImages;
-            }
-            
+            console.log("Generated content:", contentData);
             setGeneratedContent(contentData);
             setIsGenerating(false);
 
-            console.log("=== GENERATION COMPLETE ===");
-            console.log("Platforms:", contentData.platforms);
-            console.log("AI Images:", aiGeneratedImages.length);
-            console.log("Success!");
-
         } catch (err) {
-            const errorMessage = err instanceof Error ? err.message : "Failed to upload or generate";
-            console.error("=== GENERATION ERROR ===", errorMessage, err);
-
-            setError(errorMessage);
+            console.error("Upload/Generate Error:", err);
+            setError(err instanceof Error ? err.message : "Failed to upload or generate");
             setIsUploading(false);
             setIsGenerating(false);
-            setIsGeneratingImages(false);
         }
     };
 
@@ -407,27 +327,26 @@ const Studio: React.FC = () => {
         setImageFile(null);
         setImageUrl(null);
         setGeneratedContent(null);
-        setGeneratedImages([]);
         setSelectedPlatforms(['instagram', 'facebook']);
-        setGenerateImages(true);
         setError('');
     };
 
     return (
-        <div className="min-h-screen bg-background">
+        <div className="min-h-screen kalakaar-bg-pattern">
             {/* Header */}
-            <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+            <header className="border-b bg-card/70 backdrop-blur-sm sticky top-0 z-10">
                 <div className="container mx-auto px-4 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <Link to="/" className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
-                                <Star className="w-6 h-6 text-white fill-white" />
+                            {/* Logo uses new primary/secondary gradient */}
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
+                                <Star className="w-5 h-5 text-white fill-white" />
                             </div>
                             <div>
-                                <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+                                <h1 className="text-xl font-bold text-foreground">
                                     Kalakaar AI
                                 </h1>
-                                <p className="text-xs text-muted-foreground">Content Studio</p>
+                                <p className="text-xs text-muted-foreground">Content Creation Studio</p>
                             </div>
                         </Link>
                     </div>
@@ -443,12 +362,14 @@ const Studio: React.FC = () => {
             <div className="container mx-auto px-4 py-12">
                 {/* Hero */}
                 <div className="text-center mb-8">
+                    {/* Tagline uses primary/10 */}
                     <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full mb-4">
                         <Sparkles className="w-4 h-4 text-primary" />
                         <span className="text-sm font-medium text-primary">AI-Powered Studio</span>
                     </div>
                     <h1 className="text-3xl md:text-4xl font-bold mb-2">
-                        <span className="bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent">
+                        {/* Title uses primary/accent gradient */}
+                        <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                             Create Your Content
                         </span>
                     </h1>
@@ -472,6 +393,7 @@ const Studio: React.FC = () => {
                         <CardContent className="pt-6">
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-sm font-medium">Conversation Progress</span>
+                                {/* Progress text uses primary/secondary gradient */}
                                 <span className="text-sm font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                                     {progress}%
                                 </span>
@@ -484,19 +406,20 @@ const Studio: React.FC = () => {
                 {/* Main Grid */}
                 <div className="grid md:grid-cols-3 gap-6 mb-6">
                     
-                    {/* Step 1: Record Audio */}
-                    <Card className="border-2 hover:border-primary/50 transition-all">
-                        <CardHeader>
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center mb-4">
+                    {/* Step 1: Record Audio (Primary focus) */}
+                    <Card className="border-2 shadow-lg">
+                        <CardHeader className="bg-primary/5 rounded-t-lg">
+                            {/* Icon uses primary/accent gradient */}
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center mb-4">
                                 <Mic className="w-6 h-6 text-white" />
                             </div>
-                            <CardTitle>Step 1: AI Conversation</CardTitle>
+                            <CardTitle className="text-xl">Step 1: AI Conversation</CardTitle>
                             <CardDescription>
                                 {aiQuestion || 'Ready to start your conversation'}
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            {/* Status Indicators */}
+                            {/* Status Indicators (Primary for AI speaking, Destructive for recording) */}
                             <div className="text-center py-4">
                                 {isSpeaking && (
                                     <div className="flex items-center justify-center gap-2 text-primary">
@@ -505,7 +428,7 @@ const Studio: React.FC = () => {
                                     </div>
                                 )}
                                 {isTranscribing && (
-                                    <div className="flex items-center justify-center gap-2 text-secondary">
+                                    <div className="flex items-center justify-center gap-2 text-accent">
                                         <Loader2 className="w-5 h-5 animate-spin" />
                                         <span className="font-medium">Processing...</span>
                                     </div>
@@ -518,10 +441,10 @@ const Studio: React.FC = () => {
                                 )}
                             </div>
 
-                            {/* Recording Button */}
+                            {/* Recording Button - Primary/Accent Gradient */}
                             {!sessionId ? (
                                 <Button 
-                                    className="w-full bg-gradient-to-r from-primary to-secondary text-white"
+                                    className="w-full h-12 bg-gradient-to-r from-primary to-accent text-white hover:opacity-90 shadow-md shadow-primary/20"
                                     onClick={startConversation}
                                 >
                                     <Sparkles className="w-4 h-4 mr-2" />
@@ -529,7 +452,7 @@ const Studio: React.FC = () => {
                                 </Button>
                             ) : isRecording ? (
                                 <Button 
-                                    className="w-full bg-destructive text-white"
+                                    className="w-full h-12 bg-destructive text-white"
                                     onClick={stopRecording}
                                 >
                                     <StopCircle className="w-4 h-4 mr-2" />
@@ -537,7 +460,7 @@ const Studio: React.FC = () => {
                                 </Button>
                             ) : (
                                 <Button 
-                                    className="w-full bg-gradient-to-r from-primary to-secondary text-white"
+                                    className="w-full h-12 bg-gradient-to-r from-primary to-accent text-white hover:opacity-90 shadow-md shadow-primary/20"
                                     onClick={startRecording}
                                     disabled={isSpeaking || isTranscribing || isComplete}
                                 >
@@ -551,7 +474,7 @@ const Studio: React.FC = () => {
                                 <Button 
                                     variant="outline"
                                     size="sm"
-                                    className="w-full"
+                                    className="w-full border-primary/50 text-primary hover:bg-primary/10"
                                     onClick={() => audioRef.current?.play()}
                                 >
                                     <Volume2 className="w-4 h-4 mr-2" />
@@ -561,13 +484,14 @@ const Studio: React.FC = () => {
                         </CardContent>
                     </Card>
 
-                    {/* Step 2: Platform Selection */}
-                    <Card className="border-2 hover:border-secondary/50 transition-all">
-                        <CardHeader>
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-secondary to-accent flex items-center justify-center mb-4">
+                    {/* Step 2: Platform Selection (Accent focus) */}
+                    <Card className="border-2 shadow-lg">
+                        <CardHeader className="bg-accent/5 rounded-t-lg">
+                            {/* Icon uses accent/secondary gradient */}
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent to-secondary flex items-center justify-center mb-4">
                                 <Sparkles className="w-6 h-6 text-white" />
                             </div>
-                            <CardTitle>Step 2: Select Platforms</CardTitle>
+                            <CardTitle className="text-xl">Step 2: Select Platforms</CardTitle>
                             <CardDescription>
                                 Choose where you want to post ({selectedPlatforms.length} selected)
                             </CardDescription>
@@ -580,6 +504,8 @@ const Studio: React.FC = () => {
                                         checked={selectedPlatforms.includes(platform.id)}
                                         onCheckedChange={() => togglePlatform(platform.id)}
                                         disabled={!isComplete}
+                                        // 🛠️ Checkbox uses accent color
+                                        className="data-[state=checked]:bg-accent data-[state=checked]:text-accent-foreground border-accent"
                                     />
                                     <div className="flex-1">
                                         <label
@@ -598,13 +524,14 @@ const Studio: React.FC = () => {
                         </CardContent>
                     </Card>
                     
-                    {/* Step 3: Upload & Generate */}
-                    <Card className="border-2 hover:border-accent/50 transition-all">
-                        <CardHeader>
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent to-primary flex items-center justify-center mb-4">
+                    {/* Step 3: Upload & Generate (Secondary focus) */}
+                    <Card className="border-2 shadow-lg">
+                        <CardHeader className="bg-secondary/5 rounded-t-lg">
+                            {/* Icon uses secondary/primary gradient */}
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-secondary to-primary flex items-center justify-center mb-4">
                                 <ImageIcon className="w-6 h-6 text-white" />
                             </div>
-                            <CardTitle>Step 3: Upload & Generate</CardTitle>
+                            <CardTitle className="text-xl">Step 3: Upload & Generate</CardTitle>
                             <CardDescription>
                                 Add product photo and create content
                             </CardDescription>
@@ -625,52 +552,21 @@ const Studio: React.FC = () => {
 
                             {imageUrl && (
                                 <div className="text-center">
-                                    <CheckCircle className="w-8 h-8 text-green-500 mx-auto mb-2" />
-                                    <p className="text-sm text-green-600">Image uploaded!</p>
+                                    <CheckCircle className="w-8 h-8 text-secondary mx-auto mb-2" />
+                                    <p className="text-sm text-secondary">Image uploaded!</p>
                                 </div>
                             )}
 
-                            {/* Image Generation Option */}
-                            <div className="flex items-center space-x-2 p-3 bg-accent/10 rounded-lg">
-                                <Checkbox
-                                    id="generate-images"
-                                    checked={generateImages}
-                                    onCheckedChange={(checked) => setGenerateImages(checked as boolean)}
-                                    disabled={!isComplete}
-                                />
-                                <div className="flex-1">
-                                    <label
-                                        htmlFor="generate-images"
-                                        className="text-sm font-medium cursor-pointer flex items-center gap-2"
-                                    >
-                                        <Wand2 className="w-4 h-4 text-primary" />
-                                        Generate Product Images
-                                    </label>
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                        Create 3 AI-enhanced product photos
-                                    </p>
-                                </div>
-                            </div>
-
+                            {/* Generate Button - Secondary/Primary Gradient (complements Step 1) */}
                             <Button 
-                                className="w-full bg-gradient-to-r from-accent to-primary text-white"
+                                className="w-full h-12 bg-gradient-to-r from-secondary to-primary text-white hover:opacity-90 shadow-md shadow-secondary/20"
                                 onClick={uploadImageAndGenerate}
-                                disabled={!isComplete || !imageFile || selectedPlatforms.length === 0 || isUploading || isGenerating || isGeneratingImages}
+                                disabled={!isComplete || !imageFile || selectedPlatforms.length === 0 || isUploading || isGenerating}
                             >
-                                {isUploading ? (
+                                {isUploading || isGenerating ? (
                                     <>
                                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Uploading Image...
-                                    </>
-                                ) : isGeneratingImages ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Generating AI Images...
-                                    </>
-                                ) : isGenerating ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Generating Content...
+                                        {isUploading ? 'Uploading...' : 'Generating...'}
                                     </>
                                 ) : (
                                     <>
@@ -685,121 +581,92 @@ const Studio: React.FC = () => {
 
                 {/* Generated Content Display */}
                 {generatedContent && (
-                    <Card className="border-2">
+                    <Card className="border-2 shadow-lg">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-2xl">
                                 <Sparkles className="w-6 h-6 text-primary" />
+                                {/* Title gradient uses primary/secondary */}
                                 <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                                     Your Generated Content
                                 </span>
                             </CardTitle>
                             <CardDescription>
                                 Content generated for {generatedContent.platforms.length} platform(s)
-                                {generatedContent.generated_images && generatedContent.generated_images.length > 0 && ` • ${generatedContent.generated_images.length} product images created`}
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            
-                            {/* Original + Generated Images */}
-                            {(imageUrl || (generatedContent.generated_images && generatedContent.generated_images.length > 0)) && (
-                                <div className="space-y-4">
-                                    <h3 className="text-lg font-semibold flex items-center gap-2">
-                                        <ImageIcon className="w-5 h-5 text-primary" />
-                                        Product Images
-                                    </h3>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                        {/* Original Image */}
-                                        {imageUrl && (
-                                            <div className="relative group">
-                                                <div className="rounded-lg overflow-hidden border-2 border-primary/20">
-                                                    <img src={imageUrl} alt="Original Product" className="w-full h-64 object-cover" />
-                                                </div>
-                                                <div className="mt-2 text-center">
-                                                    <span className="text-xs font-medium bg-primary/10 px-2 py-1 rounded">Original</span>
-                                                </div>
-                                            </div>
-                                        )}
-                                        
-                                        {/* Generated Images */}
-                                        {generatedContent.generated_images?.map((img, idx) => (
-                                            <div key={idx} className="relative group">
-                                                <div className="rounded-lg overflow-hidden border-2 border-accent/20">
-                                                    <img src={img.url} alt={`Variant ${img.variation}`} className="w-full h-64 object-cover" />
-                                                </div>
-                                                <div className="mt-2 text-center space-y-1">
-                                                    <span className="text-xs font-medium bg-accent/10 px-2 py-1 rounded">
-                                                        AI Variant {img.variation}
-                                                    </span>
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        className="w-full"
-                                                        onClick={() => window.open(img.url, '_blank')}
-                                                    >
-                                                        <Download className="w-3 h-3 mr-1" />
-                                                        Download
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                            {imageUrl && (
+                                <div className="rounded-lg overflow-hidden border-2 border-primary/20">
+                                    <img src={imageUrl} alt="Product" className="w-full h-auto max-h-96 object-cover" />
                                 </div>
                             )}
 
                             {/* Platform-specific content */}
-                            <div className="space-y-4">
-                                <h3 className="text-lg font-semibold flex items-center gap-2">
-                                    <Sparkles className="w-5 h-5 text-secondary" />
-                                    Social Media Posts
-                                </h3>
-                                
-                                {Object.entries(generatedContent.content).map(([platformId, platformContent]) => (
-                                    <div key={platformId} className="border rounded-lg p-6 bg-gradient-to-br from-card to-accent/5">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <h4 className="font-semibold text-lg flex items-center gap-2">
-                                                <span className="text-2xl">
-                                                    {availablePlatforms.find(p => p.id === platformId)?.icon || '📱'}
-                                                </span>
-                                                {platformContent.platform}
-                                            </h4>
-                                            <span className="text-xs text-muted-foreground">
-                                                Max: {platformContent.char_limit} chars
+                            {Object.entries(generatedContent.content).map(([platformId, platformContent]) => (
+                                <div key={platformId} className="border rounded-lg p-6 bg-card/50">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h4 className="font-semibold text-lg flex items-center gap-2">
+                                            <span className="text-2xl">
+                                                {availablePlatforms.find(p => p.id === platformId)?.icon || '📱'}
                                             </span>
-                                        </div>
-                                        
-                                        {platformContent.error ? (
-                                            <div className="text-destructive bg-destructive/10 p-4 rounded-lg">
-                                                {platformContent.content}
-                                            </div>
-                                        ) : (
-                                            <div className="bg-background/50 p-4 rounded-lg whitespace-pre-line">
-                                                {platformContent.content}
-                                            </div>
-                                        )}
-                                        
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="mt-4"
-                                            onClick={() => navigator.clipboard.writeText(platformContent.content)}
-                                        >
-                                            Copy Content
-                                        </Button>
+                                            {platformContent.platform}
+                                        </h4>
+                                        <span className="text-xs text-muted-foreground">
+                                            Max: {platformContent.char_limit} chars
+                                        </span>
                                     </div>
-                                ))}
-                            </div>
+                                    
+                                    {platformContent.error ? (
+                                        <div className="text-destructive bg-destructive/10 p-4 rounded-lg">
+                                            {platformContent.content}
+                                        </div>
+                                    ) : (
+                                        <div className="bg-background/50 p-4 rounded-lg whitespace-pre-line">
+                                            {platformContent.content}
+                                        </div>
+                                    )}
+                                    
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="mt-4 border-accent text-accent hover:bg-accent/10"
+                                        onClick={() => navigator.clipboard.writeText(platformContent.content)}
+                                    >
+                                        Copy Content
+                                    </Button>
+                                </div>
+                            ))}
 
+                            {/* Create Another Product Button - Primary/Secondary Gradient */}
                             <Button
                                 onClick={resetConversation}
                                 size="lg"
-                                className="w-full h-12 bg-gradient-to-r from-primary to-secondary text-white"
+                                className="w-full h-12 bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90"
                             >
                                 <Sparkles className="w-5 h-5 mr-2" />
                                 Create Another Product
                             </Button>
                         </CardContent>
                     </Card>
+                )}
+
+                {/* Debug Info (Remove in production) */}
+                {process.env.NODE_ENV === 'development' && (
+                    <details className="mt-6">
+                        <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+                            Debug Info
+                        </summary>
+                        <pre className="mt-2 p-4 bg-muted rounded-lg text-xs overflow-auto">
+                            {JSON.stringify({
+                                sessionId, 
+                                progress, 
+                                isComplete, 
+                                selectedPlatforms,
+                                collectedInfo, 
+                                imageUrl
+                            }, null, 2)}
+                        </pre>
+                    </details>
                 )}
             </div>
         </div>

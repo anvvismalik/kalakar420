@@ -20,6 +20,18 @@ from google.cloud import speech
 from google.cloud import texttospeech
 from google.oauth2 import service_account
 
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Kalakar backend is running successfully!"
+
+if __name__ == '__main__':
+    app.run()
+
+
 # Optional: Imagen API (requires google-cloud-aiplatform)
 try:
     from google.cloud import aiplatform
