@@ -2,7 +2,7 @@ import os
 import io
 import requests
 import google.generativeai as genai
-from flask import Flask, request, jsonify, session, send_from_directory, abort
+from flask import Flask, request, jsonify, session, send_from_directory
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_sqlalchemy import SQLAlchemy
@@ -14,13 +14,23 @@ import json
 import traceback
 from PIL import Image 
 import base64
-import tempfile  # NEW: For creating a temporary file for credentials
 
-# --- GCP IMPORTS for AUTH and STORAGE ---
+# --- GOOGLE CLOUD IMPORTS ---
 from google.cloud import speech
 from google.cloud import texttospeech
 from google.oauth2 import service_account
-from google.cloud import storage # NEW: For Google Cloud Storage integration
+
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Kalakar backend is running successfully!"
+
+if __name__ == '__main__':
+    app.run()
+
 
 # Optional: Imagen API (requires google-cloud-aiplatform)
 try:
@@ -29,71 +39,27 @@ try:
     IMAGEN_AVAILABLE = True
 except ImportError:
     print("⚠ google-cloud-aiplatform not installed. Image generation will be disabled.")
+    print("  Install with: pip install google-cloud-aiplatform")
     IMAGEN_AVAILABLE = False
 
 # Load environment variables
 load_dotenv(find_dotenv())
 
-# --- CRITICAL FIX: SECURE GCP CLIENT INITIALIZATION ---
+# Speech-to-Text and Text-to-Speech credentials
 key_path = "credentials.json"
-credentials = None
-project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
-
-if os.getenv('GCP_CREDENTIALS_JSON'):
-    print("✓ Attempting to load GCP credentials from environment variable.")
-    try:
-        # 1. Write the JSON content from the environment variable into a temporary file
-        temp_dir = tempfile.gettempdir()
-        temp_key_path = os.path.join(temp_dir, "credentials.json")
-        
-        with open(temp_key_path, "w") as f:
-            f.write(os.getenv('GCP_CREDENTIALS_JSON'))
-            
-        key_path = temp_key_path
-        credentials = service_account.Credentials.from_service_account_file(key_path)
-    except Exception as e:
-        print(f"FATAL: Error processing GCP_CREDENTIALS_JSON: {e}")
-        pass
-        
-elif os.path.exists(key_path):
-    print("⚠ Using local credentials.json file. ONLY FOR LOCAL TESTING.")
-    credentials = service_account.Credentials.from_service_account_file(key_path)
-else:
-    print("⚠ GCP credentials not found. Cloud services will likely fail.")
-
-# Initialize GCP clients
-if credentials:
-    speech_client = speech.SpeechClient(credentials=credentials)
-    tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
-else:
-    speech_client = speech.SpeechClient()
-    tts_client = texttospeech.TextToSpeechClient()
-
-
-# --- CRITICAL FIX: GCS Client Initialization for File Persistence ---
-GCS_BUCKET_NAME = os.getenv('GCS_BUCKET_NAME')
-storage_client = None
-gcs_bucket = None
-
-if credentials and project_id and GCS_BUCKET_NAME:
-    try:
-        storage_client = storage.Client(project=project_id, credentials=credentials)
-        gcs_bucket = storage_client.bucket(GCS_BUCKET_NAME)
-        print(f"✓ Google Cloud Storage client initialized for bucket: {GCS_BUCKET_NAME}")
-    except Exception as e:
-        print(f"FATAL: GCS initialization failed: {e}")
-else:
-    print("⚠ GCS client not initialized due to missing credentials, project_id, or GCS_BUCKET_NAME.")
-
+credentials = service_account.Credentials.from_service_account_file(key_path)
+speech_client = speech.SpeechClient(credentials=credentials)
+tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
 
 # Translation API Key
 TRANSLATION_API_KEY = os.getenv("TRANSLATION_API_KEY")
 
 # Google Cloud Project Configuration
+project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
 location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 parent = f"projects/{project_id}/locations/{location}"
 
-# Initialize Vertex AI for Imagen (Unchanged, uses loaded credentials)
+# Initialize Vertex AI for Imagen
 if IMAGEN_AVAILABLE:
     try:
         aiplatform.init(project=project_id, location=location, credentials=credentials)
@@ -106,29 +72,36 @@ else:
 
 app = Flask(__name__)
 
-# --- CRITICAL FIX: Database Configuration (Uses DATABASE_URL) ---
-# Your database URL should be set in Render for a managed database (PostgreSQL is recommended)
+# Database and Secret Key Configuration 
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or 'sqlite:///db.sqlite'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'a_super_secret_key_change_in_production'
 
-# Session configuration (Unchanged, relies on SECRET_KEY)
-app.config['SESSION_COOKIE_SAMESITE'] = 'None' 
-app.config['SESSION_COOKIE_SECURE'] = True      
-app.config['SESSION_COOKIE_HTTPONLY'] = False 
+# Session configuration
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Required for cross-domain
+app.config['SESSION_COOKIE_SECURE'] = True       # Required when SameSite=None
+app.config['SESSION_COOKIE_HTTPONLY'] = True     # Security best practice
 app.config['SESSION_COOKIE_PATH'] = '/'
-app.config['SESSION_COOKIE_DOMAIN'] = None
-app.config['SESSION_COOKIE_NAME'] = 'session'
-app.config['PERMANENT_SESSION_LIFETIME'] = 86400 
+app.config['SESSION_COOKIE_DOMAIN'] = None       # Let browser handle it
+app.config['SESSION_COOKIE_NAME'] = 'kalakar_session'
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400
 
-# Configure CORS (CRITICAL FIX: Ensure your Vercel frontend URL is added here for production)
-# You should add your live Vercel URL to the origins list for production.
+# Configure CORS
 CORS(app, 
      supports_credentials=True, 
      origins=[
-         os.getenv('FRONTEND_URL', "http://localhost:5173"), # Use ENV variable
+         # Production frontend - ADD YOUR ACTUAL VERCEL URL
+         "https://kalakar420.vercel.app",
+         "https://www.kalakar420.vercel.app",  # If you use www
+         # Development origins
+         "http://localhost:5173",
          "http://127.0.0.1:5173",
-         "https://kalakar420-frontend.vercel.app" # Example of live Vercel URL
+         "http://localhost:3000",
+         "http://127.0.0.1:3000",
+         "http://localhost:8080",
+         "http://127.0.0.1:8080",
+         "http://localhost:5001", 
+         "http://127.0.0.1:5001"
      ],
      allow_headers=["Content-Type", "Authorization", "Cookie"],
      expose_headers=["Set-Cookie"],
@@ -136,13 +109,20 @@ CORS(app,
      max_age=3600
 )
 
-# File Upload Configuration (Local folders are now just used as GCS path prefixes)
+# File Upload Configuration
 UPLOAD_FOLDER = 'uploads'
 AUDIO_FOLDER = 'audio_responses'
 GENERATED_IMAGES_FOLDER = 'generated_images'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  
 
+for folder in [UPLOAD_FOLDER, AUDIO_FOLDER, GENERATED_IMAGES_FOLDER]:
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['AUDIO_FOLDER'] = AUDIO_FOLDER
+app.config['GENERATED_IMAGES_FOLDER'] = GENERATED_IMAGES_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
 # Configure Google Gemini API
@@ -151,7 +131,7 @@ genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
 # Initialize Database
 db = SQLAlchemy(app)
 
-# ==================== DATABASE MODELS (Unchanged) ====================
+# ==================== DATABASE MODELS ====================
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -232,31 +212,7 @@ class Conversation(db.Model):
         }
 
 
-# ==================== GCS HELPER FUNCTIONS (NEW) ====================
-
-def upload_file_to_gcs(file_content, destination_blob_name, content_type):
-    """Uploads file content to GCS and returns the public URL."""
-    if not gcs_bucket:
-        print(f"[GCS] Warning: GCS not configured. Skipping upload of {destination_blob_name}")
-        return None
-    
-    try:
-        blob = gcs_bucket.blob(destination_blob_name)
-        
-        # Set content-type and make the file publicly accessible
-        blob.upload_from_string(
-            file_content,
-            content_type=content_type,
-            predefined_acl='publicRead'
-        )
-        return blob.public_url # Returns the public GCS URL
-    except Exception as e:
-        print(f"[GCS] Error uploading {destination_blob_name}: {str(e)}")
-        traceback.print_exc()
-        return None
-
-# ==================== PLATFORM CONFIGURATION (Unchanged) ====================
-
+# ==================== PLATFORM CONFIGURATION ====================
 PLATFORMS = [
     {
         "id": "instagram",
@@ -301,7 +257,7 @@ PLATFORMS = [
 ]
 
 
-# ==================== CONVERSATION FLOW (Unchanged) ====================
+# ==================== CONVERSATION FLOW ====================
 CONVERSATION_FLOW = [
     {
         "step": "greeting",
@@ -362,7 +318,6 @@ def get_current_user():
 
 
 def translate_to_english(punjabi_text):
-    # ... (Translation logic remains the same, relies on TRANSLATION_API_KEY ENV)
     try:
         url = "https://translation.googleapis.com/language/translate/v2"
         params = {
@@ -390,14 +345,6 @@ def translate_to_english(punjabi_text):
 
 
 def text_to_speech_punjabi(text, output_filename):
-    """
-    MODIFIED: Saves the generated audio directly to GCS instead of local disk.
-    Returns the GCS public URL or None.
-    """
-    if not gcs_bucket:
-        print("[TTS] GCS not configured. Cannot save audio.")
-        return None
-        
     try:
         synthesis_input = texttospeech.SynthesisInput(text=text)
         
@@ -423,16 +370,10 @@ def text_to_speech_punjabi(text, output_filename):
         if not response:
             return None
         
-        # --- GCS UPLOAD ---
-        gcs_blob_name = f"{AUDIO_FOLDER}/{output_filename}"
-        audio_url = upload_file_to_gcs(
-            response.audio_content, 
-            gcs_blob_name, 
-            'audio/mpeg'
-        )
-        return audio_url
-        # ------------------
-        
+        output_path = os.path.join(app.config['AUDIO_FOLDER'], output_filename)
+        with open(output_path, 'wb') as out:
+            out.write(response.audio_content)
+        return output_filename
     except Exception as e:
         print(f"[TTS] Error: {str(e)}")
         return None
@@ -442,19 +383,26 @@ def text_to_speech_punjabi(text, output_filename):
 
 def generate_images_with_imagen(product_info, reference_image_path=None, num_images=3):
     """
-    MODIFIED: Saves generated images to GCS via a temporary local file.
+    HELPER FUNCTION - Generate product images using Google's Imagen API (Vertex AI)
+    This is NOT a route endpoint - it's called by generate_product_images()
+    
+    Args:
+        product_info: Dictionary with product details from conversation
+        reference_image_path: Path to reference image uploaded by artisan
+        num_images: Number of images to generate (default 3)
+    
+    Returns:
+        List of generated image data with URLs and metadata
     """
     if not IMAGEN_AVAILABLE:
         print("[IMAGEN] Service not available - package not installed")
         return None
-    if not gcs_bucket:
-        print("[IMAGEN] GCS not configured. Cannot save generated images.")
-        return None
         
     try:
         print(f"[IMAGEN] Starting generation of {num_images} images...")
+        print(f"[IMAGEN] Product info keys: {list(product_info.keys())}")
         
-        # ... (unchanged logic for building prompt from product_info) ...
+        # Build detailed prompt from product info
         craft_type = product_info.get('craft_type', {})
         product_name = product_info.get('product_name', {})
         materials = product_info.get('materials', {})
@@ -474,6 +422,8 @@ def generate_images_with_imagen(product_info, reference_image_path=None, num_ima
         if not product_name_text or product_name_text == 'None':
             product_name_text = 'artisan product'
         
+        print(f"[IMAGEN] Craft: {craft_type_text}, Product: {product_name_text}")
+        
         # Create base prompt for professional product photography
         base_prompt = f"""Professional e-commerce product photography of {product_name_text}, a {craft_type_text}.
 Made with {materials_text}. {special_text}.
@@ -492,15 +442,23 @@ Professional marketplace photography, artisanal aesthetic, premium quality, 4K r
         # Initialize Imagen model with correct version
         try:
             model = ImageGenerationModel.from_pretrained("imagegeneration@006")
-        except Exception:
+            print("[IMAGEN] Using imagegeneration@006 model")
+        except Exception as model_error:
             try:
                 model = ImageGenerationModel.from_pretrained("imagegeneration@005")
+                print("[IMAGEN] Using imagegeneration@005 model (fallback)")
             except Exception as fallback_error:
                 print(f"[IMAGEN] Model initialization failed: {fallback_error}")
                 return None
         
         for idx, prompt in enumerate(prompt_variations[:num_images]):
             try:
+                print(f"[IMAGEN] Generating image {idx + 1}/{num_images}...")
+                print(f"[IMAGEN] Prompt: {prompt[:100]}...")
+                
+                print("[IMAGEN] Using text-to-image generation")
+                
+                # Text-to-image generation WITHOUT seed parameter
                 response = model.generate_images(
                     prompt=prompt,
                     number_of_images=1,
@@ -508,55 +466,65 @@ Professional marketplace photography, artisanal aesthetic, premium quality, 4K r
                     add_watermark=False,
                 )
                 
-                if response and hasattr(response, 'images') and response.images:
+                # FIXED: Handle ImageGenerationResponse object properly
+                # The response object has an 'images' attribute that is a list
+                print(f"[IMAGEN] Response type: {type(response)}")
+                print(f"[IMAGEN] Response attributes: {dir(response)}")
+                
+                # Access images from the response object
+                if response and hasattr(response, 'images'):
                     images_list = response.images
+                    print(f"[IMAGEN] Got {len(images_list)} images from response")
                     
-                    timestamp = int(time.time())
-                    filename = f"generated_{timestamp}_{idx}.png"
-                    
-                    # --- CRITICAL FIX: Save to temp file -> Upload to GCS -> Delete temp file ---
-                    # 1. Save locally to a temporary file first (required by PIL/Vertex AI SDK's .save() method)
-                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
-                        temp_filepath = tmp_file.name
-                    
-                    images_list[0].save(temp_filepath)
-                    
-                    # 2. Upload to GCS
-                    gcs_blob_name = f"{GENERATED_IMAGES_FOLDER}/{filename}"
-                    
-                    with open(temp_filepath, 'rb') as f:
-                        file_content = f.read()
+                    if images_list and len(images_list) > 0:
+                        timestamp = int(time.time())
+                        filename = f"generated_{timestamp}_{idx}.png"
+                        filepath = os.path.join(app.config['GENERATED_IMAGES_FOLDER'], filename)
                         
-                    image_url = upload_file_to_gcs(
-                        file_content,
-                        gcs_blob_name,
-                        'image/png'
-                    )
-                    
-                    # 3. Clean up the local temporary file
-                    os.unlink(temp_filepath)
-                    # ---------------------------------------------------------------------------
-                    
-                    if image_url:
-                        file_size = len(file_content)
-                        generated_images.append({
-                            'url': image_url,
-                            'filename': filename,
-                            'variation': idx + 1,
-                            'prompt': prompt[:100] + '...',
-                            'size': file_size
-                        })
-                    
+                        # Save the first image
+                        images_list[0].save(filepath)
+                        
+                        if os.path.exists(filepath):
+                            file_size = os.path.getsize(filepath)
+                            print(f"[IMAGEN] ✓ Saved image: {filename} ({file_size} bytes)")
+                            
+                            base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
+                            image_url = f'{base_url}/generated_images/{filename}'
+                            
+                            generated_images.append({
+                                'url': image_url,
+                                'filename': filename,
+                                'variation': idx + 1,
+                                'prompt': prompt[:100] + '...',
+                                'size': file_size
+                            })
+                        else:
+                            print(f"[IMAGEN] ✗ File not saved: {filepath}")
+                    else:
+                        print(f"[IMAGEN] ✗ No images in response.images list")
+                else:
+                    print(f"[IMAGEN] ✗ Response has no 'images' attribute")
+                
                 if idx < num_images - 1:
                     time.sleep(2)
                 
             except Exception as img_error:
                 error_msg = str(img_error)
                 print(f"[IMAGEN] Error generating image {idx + 1}: {error_msg}")
-                traceback.print_exc()
-                continue
+                
+                if "quota" in error_msg.lower() or "rate" in error_msg.lower():
+                    print("[IMAGEN] Rate limit hit, stopping generation")
+                    break
+                else:
+                    traceback.print_exc()
+                    continue
         
-        return generated_images if generated_images else None
+        if generated_images:
+            print(f"[IMAGEN] Successfully generated {len(generated_images)} images")
+            return generated_images
+        else:
+            print("[IMAGEN] No images were generated")
+            return None
             
     except Exception as e:
         print(f"[IMAGEN] Fatal error: {str(e)}")
@@ -564,7 +532,7 @@ Professional marketplace photography, artisanal aesthetic, premium quality, 4K r
         return None
 
 
-# ==================== PLATFORMS ENDPOINT (Unchanged) ====================
+# ==================== PLATFORMS ENDPOINT ====================
 
 @app.route('/api/platforms', methods=['GET'])
 def get_platforms():
@@ -572,15 +540,7 @@ def get_platforms():
     return jsonify({'platforms': PLATFORMS}), 200
 
 
-# ==================== HEALTH CHECK FIX (NEW) ====================
-
-@app.route('/', methods=['GET'])
-def index():
-    """Simple root route for Render health check."""
-    return jsonify({'status': 'Kalakar AI Backend is Running', 'health_check_endpoint': '/api/health'}), 200
-
-
-# ==================== AUTHENTICATION (Unchanged) ====================
+# ==================== AUTHENTICATION ====================
 
 @app.route('/api/signup', methods=['POST'])
 def signup():
@@ -632,14 +592,13 @@ def get_current_user_info():
     return jsonify({'error': 'Not authenticated'}), 401
 
 
-# ==================== CONVERSATION ROUTES (Updated for GCS URL) ====================
+# ==================== CONVERSATION ROUTES ====================
 
 @app.route('/api/conversation/start', methods=['POST'])
 def start_conversation():
     try:
         user = get_current_user()
         if not user:
-            # Demo user logic for unauthenticated access
             user = User.query.filter_by(email='demo@kalakaar.ai').first()
             if not user:
                 user = User(username='demo_user', email='demo@kalakaar.ai')
@@ -664,16 +623,14 @@ def start_conversation():
         
         first_question = CONVERSATION_FLOW[0]
         audio_filename = f"{session_id}_greeting.mp3"
-        
-        # CRITICAL FIX: text_to_speech_punjabi now returns a GCS URL
-        audio_file_url = text_to_speech_punjabi(first_question['question_pa'], audio_filename)
+        audio_file = text_to_speech_punjabi(first_question['question_pa'], audio_filename)
         
         return jsonify({
             'session_id': session_id,
             'question': first_question['question_pa'],
             'question_en': first_question['question_en'],
             'step': 'greeting',
-            'audio_url': audio_file_url, # Returns GCS URL
+            'audio_url': f'/audio/{audio_filename}' if audio_file else None,
             'progress': 0
         }), 200
     except Exception as e:
@@ -705,7 +662,6 @@ def respond_to_conversation():
             enable_automatic_punctuation=True,
         )
         
-        # This part relies on the speech_client being correctly initialized from ENV credentials
         response = speech_client.recognize(config=config, audio=audio)
         punjabi_text = " ".join([r.alternatives[0].transcript for r in response.results]).strip()
         
@@ -730,6 +686,11 @@ def respond_to_conversation():
         conversation.collected_info = json.dumps(collected_info)
         conversation.conversation_data = json.dumps(conv_data)
         
+        print("="*50)
+        print(f"DEBUG: SAVING collected_info for step '{current_step['field']}':")
+        print(json.dumps(collected_info, indent=2))
+        print("="*50)
+        
         next_step_index = current_step_index + 1
         
         if next_step_index >= len(CONVERSATION_FLOW):
@@ -748,8 +709,7 @@ def respond_to_conversation():
         db.session.commit()
         
         audio_filename = f"{session_id}_{next_step['step']}.mp3"
-        # CRITICAL FIX: text_to_speech_punjabi now returns a GCS URL
-        audio_file_url = text_to_speech_punjabi(next_step['question_pa'], audio_filename)
+        audio_file = text_to_speech_punjabi(next_step['question_pa'], audio_filename)
         
         progress = int((next_step_index / len(CONVERSATION_FLOW)) * 100)
         
@@ -760,7 +720,7 @@ def respond_to_conversation():
             'next_question': next_step['question_pa'],
             'next_question_en': next_step['question_en'],
             'step': next_step['step'],
-            'audio_url': audio_file_url, # Returns GCS URL
+            'audio_url': f'/audio/{audio_filename}' if audio_file else None,
             'progress': progress
         }), 200
     except Exception as e:
@@ -773,81 +733,154 @@ def respond_to_conversation():
 @app.route('/api/generate-images', methods=['POST'])
 def generate_product_images():
     """
-    MODIFIED: Handles reference image upload to GCS. Calls the GCS-aware image generation helper.
+    ROUTE ENDPOINT - Generate professional product images using Google Imagen
+    This calls the helper function generate_images_with_imagen()
     """
     try:
         if not IMAGEN_AVAILABLE:
-            return jsonify({'error': 'Image generation not available', 'success': False}), 503
+            return jsonify({
+                'error': 'Image generation not available',
+                'details': 'Please install: pip install google-cloud-aiplatform',
+                'success': False
+            }), 503
         
         if not project_id:
-            return jsonify({'error': 'Google Cloud not configured', 'success': False}), 503
+            return jsonify({
+                'error': 'Google Cloud not configured',
+                'details': 'Set GOOGLE_CLOUD_PROJECT_ID in environment variables',
+                'success': False
+            }), 503
         
         user = get_current_user()
         if not user:
             return jsonify({'error': 'Not authenticated', 'success': False}), 401
         
-        data = request.form.to_dict()
+        # Get request data
+        if request.is_json:
+            data = request.get_json()
+        else:
+            data = request.form.to_dict()
+        
         session_id = data.get('session_id')
         num_images = int(data.get('num_images', 3))
         
-        if not session_id or num_images < 1 or num_images > 3:
-            return jsonify({'error': 'Invalid parameters', 'success': False}), 400
+        if not session_id:
+            return jsonify({'error': 'session_id required', 'success': False}), 400
         
-        conversation = Conversation.query.filter_by(session_id=session_id, user_id=user.id).first()
+        if num_images < 1 or num_images > 3:
+            return jsonify({'error': 'num_images must be between 1 and 3', 'success': False}), 400
         
-        if not conversation or not conversation.is_complete:
-            return jsonify({'error': 'Conversation must be completed first', 'success': False}), 400
+        # Get conversation data
+        conversation = Conversation.query.filter_by(
+            session_id=session_id,
+            user_id=user.id
+        ).first()
         
-        collected_info = json.loads(conversation.collected_info)
+        if not conversation:
+            return jsonify({'error': 'Conversation not found', 'success': False}), 404
         
-        if any(f not in collected_info for f in ['craft_type', 'product_name']):
-            return jsonify({'error': 'Incomplete product information', 'success': False}), 400
+        if not conversation.is_complete:
+            return jsonify({
+                'error': 'Conversation must be completed first',
+                'success': False,
+                'current_step': conversation.current_step
+            }), 400
         
-        # --- CRITICAL FIX: Handle reference image via GCS URL ---
-        reference_image_url = None
+        # Parse collected info
+        try:
+            collected_info = json.loads(conversation.collected_info)
+            print(f"[IMAGE_GEN] Collected info: {json.dumps(collected_info, indent=2)}")
+        except json.JSONDecodeError as e:
+            return jsonify({
+                'error': 'Invalid conversation data',
+                'details': str(e),
+                'success': False
+            }), 500
+        
+        # Validate required fields
+        required_fields = ['craft_type', 'product_name']
+        missing_fields = [f for f in required_fields if f not in collected_info]
+        
+        if missing_fields:
+            return jsonify({
+                'error': 'Incomplete product information',
+                'missing_fields': missing_fields,
+                'success': False
+            }), 400
+        
+        # Get reference image if provided
+        reference_image_path = None
         
         if 'reference_image' in request.files:
             file = request.files['reference_image']
             if file and file.filename and allowed_file(file.filename):
                 timestamp = int(time.time())
                 filename = f"ref_{timestamp}_{secure_filename(file.filename)}"
-                
-                file_content = file.read()
-                gcs_blob_name = f"{UPLOAD_FOLDER}/{filename}"
-                
-                reference_image_url = upload_file_to_gcs(
-                    file_content, 
-                    gcs_blob_name, 
-                    file.content_type
-                )
-            
-        elif data.get('reference_image_url'):
-            reference_image_url = data.get('reference_image_url')
-
-        print(f"[IMAGE_GEN] Starting generation...")
+                reference_image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(reference_image_path)
+                print(f"[IMAGE_GEN] Reference image uploaded: {filename}")
         
-        # The helper function is called without a local path, matching the GCS strategy.
+        elif data.get('reference_image_url'):
+            try:
+                img_url = data.get('reference_image_url')
+                print(f"[IMAGE_GEN] Processing reference URL: {img_url}")
+                
+                if not img_url.startswith('http'):
+                    if img_url.startswith('/uploads/'):
+                        image_filename = os.path.basename(img_url)
+                        reference_image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
+                        
+                        if not os.path.exists(reference_image_path):
+                            print(f"[IMAGE_GEN] File not found locally: {reference_image_path}")
+                            img_url = f"{os.getenv('BASE_URL', 'http://127.0.0.1:5001')}{img_url}"
+                    else:
+                        img_url = f"{os.getenv('BASE_URL', 'http://127.0.0.1:5001')}/uploads/{img_url}"
+                
+                if img_url.startswith('http') and not os.path.exists(reference_image_path or ''):
+                    img_response = requests.get(img_url, timeout=10)
+                    
+                    if img_response.status_code == 200:
+                        timestamp = int(time.time())
+                        filename = f"ref_{timestamp}.jpg"
+                        reference_image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                        
+                        with open(reference_image_path, 'wb') as f:
+                            f.write(img_response.content)
+                        print(f"[IMAGE_GEN] Reference image downloaded: {filename}")
+                    else:
+                        print(f"[IMAGE_GEN] Failed to download: {img_response.status_code}")
+                        
+            except Exception as e:
+                print(f"[IMAGE_GEN] Error handling reference image: {e}")
+                traceback.print_exc()
+        
+        print(f"[IMAGE_GEN] Starting generation...")
+        print(f"[IMAGE_GEN] Session: {session_id}")
+        print(f"[IMAGE_GEN] Reference image: {reference_image_path}")
+        print(f"[IMAGE_GEN] Number of images: {num_images}")
+        
+        # Call the helper function
         generated_images = generate_images_with_imagen(
             collected_info,
-            None, # reference_image_path is not a local file here
+            reference_image_path,
             num_images
         )
-        # ... (rest of the database saving logic remains the same)
         
         if not generated_images:
-            return jsonify({'error': 'Image generation failed', 'success': False}), 500
+            return jsonify({
+                'error': 'Image generation failed',
+                'details': 'No images were generated. Check server logs for details.',
+                'success': False
+            }), 500
         
         # Save to database
         try:
-            # ... (database saving logic unchanged) ...
             content = Content.query.filter_by(user_id=user.id).order_by(Content.created_at.desc()).first()
             
             if content:
                 content.generated_images = json.dumps(generated_images)
-                # Note: reference_image_url is stored in content.image_url if we want to save it
-                if reference_image_url:
-                    content.image_url = reference_image_url
                 db.session.commit()
+                print(f"[IMAGE_GEN] Updated existing content record: {content.id}")
             else:
                 product_details = []
                 for key, value in collected_info.items():
@@ -861,11 +894,11 @@ def generate_product_images():
                 content = Content(
                     user_id=user.id,
                     english_text=product_text,
-                    image_url=reference_image_url,
                     generated_images=json.dumps(generated_images)
                 )
                 db.session.add(content)
                 db.session.commit()
+                print(f"[IMAGE_GEN] Created new content record: {content.id}")
                 
         except Exception as db_error:
             print(f"[IMAGE_GEN] DB error: {db_error}")
@@ -891,66 +924,46 @@ def generate_product_images():
         }), 500
 
 
-# ==================== IMAGE & CONTENT GENERATION (Updated for GCS) ====================
+# ==================== IMAGE & CONTENT GENERATION ====================
 
 @app.route('/api/upload_image', methods=['POST'])
 def upload_image():
-    """
-    MODIFIED: Uploads the file directly to GCS and returns the GCS URL.
-    """
     try:
         file = request.files['image']
-        if not file or not file.filename or not allowed_file(file.filename):
-            return jsonify({'error': 'Invalid file'}), 400
-            
         timestamp = int(time.time())
         filename = f"{timestamp}_{secure_filename(file.filename)}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
         
-        # --- GCS UPLOAD ---
-        file_content = file.read()
-        gcs_blob_name = f"{UPLOAD_FOLDER}/{filename}"
-        
-        image_url = upload_file_to_gcs(
-            file_content, 
-            gcs_blob_name, 
-            file.content_type
-        )
-        
-        if not image_url:
-            return jsonify({'error': 'Failed to upload to cloud storage'}), 500
-        # ------------------
+        base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
+        image_url = f'{base_url}/uploads/{filename}'
         
         return jsonify({'message': 'Image uploaded!', 'image_url': image_url}), 200
     except Exception as e:
-        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 
-# --- CRITICAL FIX: REMOVED LOCAL FILE SERVING ROUTES ---
-# Files are now served directly from Google Cloud Storage URLs.
-# The client must be updated to use the GCS URLs provided in the API responses.
+@app.route('/uploads/<filename>')
+def serve_image(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
-# @app.route('/uploads/<filename>')
-# def serve_image(filename):
-#     # ... REMOVED: Use GCS URL instead.
-#     pass
 
-# @app.route('/generated_images/<filename>')
-# def serve_generated_image(filename):
-#     # ... REMOVED: Use GCS URL instead.
-#     pass
+@app.route('/generated_images/<filename>')
+def serve_generated_image(filename):
+    """Serve AI generated images"""
+    try:
+        return send_from_directory(app.config['GENERATED_IMAGES_FOLDER'], filename)
+    except FileNotFoundError:
+        return jsonify({'error': 'Image not found'}), 404
 
-# @app.route('/audio/<filename>')
-# def serve_audio(filename):
-#     # ... REMOVED: Use GCS URL instead.
-#     pass
+
+@app.route('/audio/<filename>')
+def serve_audio(filename):
+    return send_from_directory(app.config['AUDIO_FOLDER'], filename, mimetype='audio/mpeg')
 
 
 @app.route('/api/conversation/generate', methods=['POST'])
 def generate_from_conversation():
-    """
-    MODIFIED: Loads the reference image from its public URL (GCS/External) into memory.
-    """
     try:
         data = request.get_json()
         session_id = data.get('session_id')
@@ -968,8 +981,8 @@ def generate_from_conversation():
         
         collected_info = json.loads(conversation.collected_info)
         
-        # ... (product details extraction unchanged) ...
         product_details_list = []
+        
         fields_to_extract = [
             ("craft_type", "Craft Type"),
             ("product_name", "Product Name"),
@@ -988,21 +1001,21 @@ def generate_from_conversation():
         image_part = None
         if image_url:
             try:
-                print(f"Attempting to load image from URL: {image_url}")
+                image_filename = os.path.basename(image_url)
+                image_filepath = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
                 
-                # Fetch image data from the public URL (GCS or external)
-                image_response = requests.get(image_url, stream=True, timeout=10)
-                if image_response.status_code == 200:
-                    image_part = Image.open(io.BytesIO(image_response.content))
-                    print("✓ Successfully loaded image content via HTTP request.")
+                if os.path.exists(image_filepath):
+                    image_part = Image.open(image_filepath)
                 else:
-                    print(f"Warning: Could not fetch image from {image_url}. Status: {image_response.status_code}")
+                    image_response = requests.get(image_url, stream=True, timeout=10)
+                    if image_response.status_code == 200:
+                        image_part = Image.open(io.BytesIO(image_response.content))
+                    else:
+                        print(f"Warning: Could not fetch image from {image_url}")
 
             except Exception as e:
                 print(f"Error loading image: {str(e)}")
-                traceback.print_exc()
-        
-        # ... (content generation logic unchanged) ...
+
         platform_content = {}
         
         for platform_id in selected_platforms:
@@ -1027,6 +1040,11 @@ Requirements:
 - The post must be engaging and encourage comments/shares.
 
 Generate ONLY the post content, nothing else."""
+
+            print("="*50)
+            print(f"DEBUG: Prompt sent to Gemini for {platform['name']}:")
+            print(prompt)
+            print("="*50)
 
             try:
                 model = genai.GenerativeModel('gemini-2.0-flash-exp')
@@ -1065,7 +1083,7 @@ Generate ONLY the post content, nothing else."""
         return jsonify({'error': str(e)}), 500
 
 
-# ==================== HEALTH CHECK (Unchanged) ====================
+# ==================== HEALTH CHECK ====================
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -1096,22 +1114,29 @@ def request_entity_too_large(error):
 def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
+@app.route('/health')
+def health():
+    return {'status': 'healthy'}, 200
 
-# ==================== STARTUP (MODIFIED for Render Port) ====================
+# ==================== STARTUP ====================
 
 if __name__ == '__main__':
     with app.app_context():
-        # NOTE: db.create_all() will only work if the DATABASE_URL is set correctly 
-        # to a managed DB (like PostgreSQL) before deployment.
         db.create_all()
         print("=" * 50)
-        print("✓ Database setup attempt complete!")
-        # ... (rest of startup logs) ...
+        print("✓ Database ready!")
+        print("✓ Google Cloud Services:")
+        print("  - Speech-to-Text (Punjabi)")
+        print("  - Text-to-Speech (Punjabi)")
+        print("  - Translation API")
+        print("  - Gemini (Content Generation)")
+        if IMAGEN_AVAILABLE and project_id:
+            print("  - Imagen (Image Generation)")
+        elif not IMAGEN_AVAILABLE:
+            print("  ⚠ Imagen disabled (install: pip install google-cloud-aiplatform)")
+        else:
+            print("  ⚠ Imagen not configured (set GOOGLE_CLOUD_PROJECT_ID)")
         print("=" * 50)
-        
-    # CRITICAL FIX: Use the environment variable PORT provided by Render
-    port = int(os.environ.get('PORT', 5001))
-    print(f"🚀 Server running on http://0.0.0.0:{port}")
+        print("🚀 Server running on http://127.0.0.1:5001")
     
-    # Run the application, binding to all interfaces on the correct port
-    app.run(debug=False, host='0.0.0.0', port=port)
+    app.run(debug=True, host='0.0.0.0', port=5001)
