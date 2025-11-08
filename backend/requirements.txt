@@ -60,4 +60,4 @@ safetensors==0.6.2
 # Other dependencies
 pyttsx3==2.99
 soundfile==0.13.1
-psycopg[binary]==3.2.1
+psycopg2-binary==2.9.9
