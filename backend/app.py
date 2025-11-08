@@ -20,18 +20,6 @@ from google.cloud import speech
 from google.cloud import texttospeech
 from google.oauth2 import service_account
 
-from flask import Flask
-
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Kalakar backend is running successfully!"
-
-if __name__ == '__main__':
-    app.run()
-
-
 # Optional: Imagen API (requires google-cloud-aiplatform)
 try:
     from google.cloud import aiplatform
@@ -45,11 +33,49 @@ except ImportError:
 # Load environment variables
 load_dotenv(find_dotenv())
 
-# Speech-to-Text and Text-to-Speech credentials
-key_path = "credentials.json"
-credentials = service_account.Credentials.from_service_account_file(key_path)
-speech_client = speech.SpeechClient(credentials=credentials)
-tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
+# --- GOOGLE CLOUD CREDENTIALS SETUP ---
+def get_google_credentials():
+    """
+    Load Google Cloud credentials from environment variable or file
+    For production (Render), use GOOGLE_APPLICATION_CREDENTIALS_JSON env var
+    For local dev, use credentials.json file
+    """
+    try:
+        # Try to load from environment variable (production)
+        creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+        if creds_json:
+            print("✓ Using credentials from environment variable")
+            creds_dict = json.loads(creds_json)
+            return service_account.Credentials.from_service_account_info(creds_dict)
+        
+        # Fall back to local file (development)
+        key_path = "credentials.json"
+        if os.path.exists(key_path):
+            print("⚠ Using local credentials.json file. ONLY FOR LOCAL TESTING.")
+            return service_account.Credentials.from_service_account_file(key_path)
+        
+        print("⚠ No Google Cloud credentials found")
+        return None
+    except Exception as e:
+        print(f"⚠ Error loading credentials: {e}")
+        return None
+
+# Get credentials
+credentials = get_google_credentials()
+
+# Initialize Google Cloud clients only if credentials are available
+speech_client = None
+tts_client = None
+
+if credentials:
+    try:
+        speech_client = speech.SpeechClient(credentials=credentials)
+        tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
+        print("✓ Google Cloud Speech/TTS clients initialized")
+    except Exception as e:
+        print(f"⚠ Speech/TTS client initialization failed: {e}")
+else:
+    print("⚠ Running without Google Cloud Speech/TTS services")
 
 # Translation API Key
 TRANSLATION_API_KEY = os.getenv("TRANSLATION_API_KEY")
@@ -60,22 +86,39 @@ location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 parent = f"projects/{project_id}/locations/{location}"
 
 # Initialize Vertex AI for Imagen
-if IMAGEN_AVAILABLE:
+if IMAGEN_AVAILABLE and credentials:
     try:
-        aiplatform.init(project=project_id, location=location, credentials=credentials)
-        print("✓ Vertex AI initialized for Imagen")
+        if project_id:
+            aiplatform.init(project=project_id, location=location, credentials=credentials)
+            print("✓ Vertex AI initialized for Imagen")
+        else:
+            print("⚠ GOOGLE_CLOUD_PROJECT_ID not set")
+            IMAGEN_AVAILABLE = False
     except Exception as e:
         print(f"⚠ Vertex AI initialization warning: {e}")
         IMAGEN_AVAILABLE = False
 else:
-    print("⚠ Imagen API disabled (package not installed)")
+    print("⚠ Imagen API disabled")
 
 app = Flask(__name__)
 
-# Database and Secret Key Configuration 
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or 'sqlite:///db.sqlite'
+# Database and Secret Key Configuration
+database_url = os.environ.get('DATABASE_URL')
+
+# Render's PostgreSQL URL starts with postgres://, but SQLAlchemy needs postgresql://
+if database_url and database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+
+# Use PostgreSQL in production, SQLite for local development
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///db.sqlite'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,  # Verify connections before using them
+    'pool_recycle': 300,    # Recycle connections after 5 minutes
+}
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'a_super_secret_key_change_in_production'
+
+print(f"✓ Database: {'PostgreSQL (Production)' if database_url else 'SQLite (Development)'}")
 
 # Session configuration
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Required for cross-domain
@@ -90,9 +133,8 @@ app.config['PERMANENT_SESSION_LIFETIME'] = 86400
 CORS(app, 
      supports_credentials=True, 
      origins=[
-         # Production frontend - ADD YOUR ACTUAL VERCEL URL
+         # Production frontend
          "https://kalakar420.vercel.app",
-         "https://www.kalakar420.vercel.app",  # If you use www
          # Development origins
          "http://localhost:5173",
          "http://127.0.0.1:5173",
@@ -210,6 +252,39 @@ class Conversation(db.Model):
             'is_complete': self.is_complete,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+
+
+# ==================== DATABASE INITIALIZATION ====================
+
+def init_database():
+    """Initialize database tables - creates all tables on startup"""
+    with app.app_context():
+        try:
+            # Import all models to ensure they're registered
+            from sqlalchemy import inspect
+            
+            # Check if tables exist
+            inspector = inspect(db.engine)
+            existing_tables = inspector.get_table_names()
+            
+            # Create all tables
+            db.create_all()
+            
+            print("=" * 60)
+            print("✓ Database initialized successfully!")
+            print(f"  Engine: {db.engine.url.drivername}")
+            print(f"  Tables: {', '.join(db.metadata.tables.keys())}")
+            if existing_tables:
+                print(f"  Existing: {', '.join(existing_tables)}")
+            print("=" * 60)
+            
+        except Exception as e:
+            print(f"⚠ Database initialization error: {e}")
+            import traceback
+            traceback.print_exc()
+
+# IMPORTANT: Call this right after defining it
+init_database()
 
 
 # ==================== PLATFORM CONFIGURATION ====================
@@ -345,6 +420,10 @@ def translate_to_english(punjabi_text):
 
 
 def text_to_speech_punjabi(text, output_filename):
+    if not tts_client:
+        print("[TTS] Client not initialized")
+        return None
+        
     try:
         synthesis_input = texttospeech.SynthesisInput(text=text)
         
@@ -384,36 +463,24 @@ def text_to_speech_punjabi(text, output_filename):
 def generate_images_with_imagen(product_info, reference_image_path=None, num_images=3):
     """
     HELPER FUNCTION - Generate product images using Google's Imagen API (Vertex AI)
-    This is NOT a route endpoint - it's called by generate_product_images()
-    
-    Args:
-        product_info: Dictionary with product details from conversation
-        reference_image_path: Path to reference image uploaded by artisan
-        num_images: Number of images to generate (default 3)
-    
-    Returns:
-        List of generated image data with URLs and metadata
     """
     if not IMAGEN_AVAILABLE:
-        print("[IMAGEN] Service not available - package not installed")
+        print("[IMAGEN] Service not available")
         return None
         
     try:
         print(f"[IMAGEN] Starting generation of {num_images} images...")
-        print(f"[IMAGEN] Product info keys: {list(product_info.keys())}")
         
         # Build detailed prompt from product info
         craft_type = product_info.get('craft_type', {})
         product_name = product_info.get('product_name', {})
         materials = product_info.get('materials', {})
-        process = product_info.get('process', {})
         special_features = product_info.get('special_features', {})
         
         # Handle both dict and string formats
         craft_type_text = craft_type.get('english', craft_type) if isinstance(craft_type, dict) else str(craft_type)
         product_name_text = product_name.get('english', product_name) if isinstance(product_name, dict) else str(product_name)
         materials_text = materials.get('english', materials) if isinstance(materials, dict) else str(materials)
-        process_text = process.get('english', process) if isinstance(process, dict) else str(process)
         special_text = special_features.get('english', special_features) if isinstance(special_features, dict) else str(special_features)
         
         # Fallback values
@@ -421,8 +488,6 @@ def generate_images_with_imagen(product_info, reference_image_path=None, num_ima
             craft_type_text = 'handcrafted product'
         if not product_name_text or product_name_text == 'None':
             product_name_text = 'artisan product'
-        
-        print(f"[IMAGEN] Craft: {craft_type_text}, Product: {product_name_text}")
         
         # Create base prompt for professional product photography
         base_prompt = f"""Professional e-commerce product photography of {product_name_text}, a {craft_type_text}.
@@ -439,7 +504,7 @@ Professional marketplace photography, artisanal aesthetic, premium quality, 4K r
         
         generated_images = []
         
-        # Initialize Imagen model with correct version
+        # Initialize Imagen model
         try:
             model = ImageGenerationModel.from_pretrained("imagegeneration@006")
             print("[IMAGEN] Using imagegeneration@006 model")
@@ -454,11 +519,8 @@ Professional marketplace photography, artisanal aesthetic, premium quality, 4K r
         for idx, prompt in enumerate(prompt_variations[:num_images]):
             try:
                 print(f"[IMAGEN] Generating image {idx + 1}/{num_images}...")
-                print(f"[IMAGEN] Prompt: {prompt[:100]}...")
                 
-                print("[IMAGEN] Using text-to-image generation")
-                
-                # Text-to-image generation WITHOUT seed parameter
+                # Text-to-image generation
                 response = model.generate_images(
                     prompt=prompt,
                     number_of_images=1,
@@ -466,15 +528,9 @@ Professional marketplace photography, artisanal aesthetic, premium quality, 4K r
                     add_watermark=False,
                 )
                 
-                # FIXED: Handle ImageGenerationResponse object properly
-                # The response object has an 'images' attribute that is a list
-                print(f"[IMAGEN] Response type: {type(response)}")
-                print(f"[IMAGEN] Response attributes: {dir(response)}")
-                
-                # Access images from the response object
+                # Handle ImageGenerationResponse object
                 if response and hasattr(response, 'images'):
                     images_list = response.images
-                    print(f"[IMAGEN] Got {len(images_list)} images from response")
                     
                     if images_list and len(images_list) > 0:
                         timestamp = int(time.time())
@@ -498,12 +554,6 @@ Professional marketplace photography, artisanal aesthetic, premium quality, 4K r
                                 'prompt': prompt[:100] + '...',
                                 'size': file_size
                             })
-                        else:
-                            print(f"[IMAGEN] ✗ File not saved: {filepath}")
-                    else:
-                        print(f"[IMAGEN] ✗ No images in response.images list")
-                else:
-                    print(f"[IMAGEN] ✗ Response has no 'images' attribute")
                 
                 if idx < num_images - 1:
                     time.sleep(2)
@@ -516,7 +566,6 @@ Professional marketplace photography, artisanal aesthetic, premium quality, 4K r
                     print("[IMAGEN] Rate limit hit, stopping generation")
                     break
                 else:
-                    traceback.print_exc()
                     continue
         
         if generated_images:
@@ -530,6 +579,33 @@ Professional marketplace photography, artisanal aesthetic, premium quality, 4K r
         print(f"[IMAGEN] Fatal error: {str(e)}")
         traceback.print_exc()
         return None
+
+
+# ==================== ROUTES ====================
+
+@app.route('/')
+def home():
+    return jsonify({
+        'status': 'online',
+        'service': 'Kalakar AI Backend',
+        'version': '1.0.0'
+    }), 200
+
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.utcnow().isoformat(),
+        'services': {
+            'speech_to_text': 'active' if speech_client else 'inactive',
+            'text_to_speech': 'active' if tts_client else 'inactive',
+            'translation': 'active' if TRANSLATION_API_KEY else 'inactive',
+            'gemini_content': 'active',
+            'imagen_generation': 'active' if (IMAGEN_AVAILABLE and project_id) else 'not_configured',
+            'database': 'postgresql' if database_url else 'sqlite'
+        }
+    }), 200
 
 
 # ==================== PLATFORMS ENDPOINT ====================
@@ -652,6 +728,9 @@ def respond_to_conversation():
         if not conversation:
             return jsonify({'error': 'Conversation not found'}), 404
         
+        if not speech_client:
+            return jsonify({'error': 'Speech service not available'}), 503
+        
         audio_file = request.files['audio']
         audio_content = audio_file.read()
         audio = speech.RecognitionAudio(content=audio_content)
@@ -685,11 +764,6 @@ def respond_to_conversation():
         
         conversation.collected_info = json.dumps(collected_info)
         conversation.conversation_data = json.dumps(conv_data)
-        
-        print("="*50)
-        print(f"DEBUG: SAVING collected_info for step '{current_step['field']}':")
-        print(json.dumps(collected_info, indent=2))
-        print("="*50)
         
         next_step_index = current_step_index + 1
         
@@ -734,7 +808,6 @@ def respond_to_conversation():
 def generate_product_images():
     """
     ROUTE ENDPOINT - Generate professional product images using Google Imagen
-    This calls the helper function generate_images_with_imagen()
     """
     try:
         if not IMAGEN_AVAILABLE:
@@ -789,7 +862,6 @@ def generate_product_images():
         # Parse collected info
         try:
             collected_info = json.loads(conversation.collected_info)
-            print(f"[IMAGE_GEN] Collected info: {json.dumps(collected_info, indent=2)}")
         except json.JSONDecodeError as e:
             return jsonify({
                 'error': 'Invalid conversation data',
@@ -818,46 +890,6 @@ def generate_product_images():
                 filename = f"ref_{timestamp}_{secure_filename(file.filename)}"
                 reference_image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(reference_image_path)
-                print(f"[IMAGE_GEN] Reference image uploaded: {filename}")
-        
-        elif data.get('reference_image_url'):
-            try:
-                img_url = data.get('reference_image_url')
-                print(f"[IMAGE_GEN] Processing reference URL: {img_url}")
-                
-                if not img_url.startswith('http'):
-                    if img_url.startswith('/uploads/'):
-                        image_filename = os.path.basename(img_url)
-                        reference_image_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
-                        
-                        if not os.path.exists(reference_image_path):
-                            print(f"[IMAGE_GEN] File not found locally: {reference_image_path}")
-                            img_url = f"{os.getenv('BASE_URL', 'http://127.0.0.1:5001')}{img_url}"
-                    else:
-                        img_url = f"{os.getenv('BASE_URL', 'http://127.0.0.1:5001')}/uploads/{img_url}"
-                
-                if img_url.startswith('http') and not os.path.exists(reference_image_path or ''):
-                    img_response = requests.get(img_url, timeout=10)
-                    
-                    if img_response.status_code == 200:
-                        timestamp = int(time.time())
-                        filename = f"ref_{timestamp}.jpg"
-                        reference_image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                        
-                        with open(reference_image_path, 'wb') as f:
-                            f.write(img_response.content)
-                        print(f"[IMAGE_GEN] Reference image downloaded: {filename}")
-                    else:
-                        print(f"[IMAGE_GEN] Failed to download: {img_response.status_code}")
-                        
-            except Exception as e:
-                print(f"[IMAGE_GEN] Error handling reference image: {e}")
-                traceback.print_exc()
-        
-        print(f"[IMAGE_GEN] Starting generation...")
-        print(f"[IMAGE_GEN] Session: {session_id}")
-        print(f"[IMAGE_GEN] Reference image: {reference_image_path}")
-        print(f"[IMAGE_GEN] Number of images: {num_images}")
         
         # Call the helper function
         generated_images = generate_images_with_imagen(
@@ -880,7 +912,6 @@ def generate_product_images():
             if content:
                 content.generated_images = json.dumps(generated_images)
                 db.session.commit()
-                print(f"[IMAGE_GEN] Updated existing content record: {content.id}")
             else:
                 product_details = []
                 for key, value in collected_info.items():
@@ -898,7 +929,6 @@ def generate_product_images():
                 )
                 db.session.add(content)
                 db.session.commit()
-                print(f"[IMAGE_GEN] Created new content record: {content.id}")
                 
         except Exception as db_error:
             print(f"[IMAGE_GEN] DB error: {db_error}")
@@ -1010,9 +1040,6 @@ def generate_from_conversation():
                     image_response = requests.get(image_url, stream=True, timeout=10)
                     if image_response.status_code == 200:
                         image_part = Image.open(io.BytesIO(image_response.content))
-                    else:
-                        print(f"Warning: Could not fetch image from {image_url}")
-
             except Exception as e:
                 print(f"Error loading image: {str(e)}")
 
@@ -1041,11 +1068,6 @@ Requirements:
 
 Generate ONLY the post content, nothing else."""
 
-            print("="*50)
-            print(f"DEBUG: Prompt sent to Gemini for {platform['name']}:")
-            print(prompt)
-            print("="*50)
-
             try:
                 model = genai.GenerativeModel('gemini-2.0-flash-exp')
                 
@@ -1065,7 +1087,7 @@ Generate ONLY the post content, nothing else."""
                 traceback.print_exc()
                 platform_content[platform_id] = {
                     'platform': platform['name'],
-                    'content': f'Error generating content: {str(e)}. (Check server logs for details).',
+                    'content': f'Error generating content: {str(e)}',
                     'char_limit': platform['char_limit'],
                     'format_type': platform['best_for'],
                     'error': True
@@ -1083,22 +1105,7 @@ Generate ONLY the post content, nothing else."""
         return jsonify({'error': str(e)}), 500
 
 
-# ==================== HEALTH CHECK ====================
-
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.utcnow().isoformat(),
-        'services': {
-            'speech_to_text': 'active',
-            'text_to_speech': 'active',
-            'translation': 'active',
-            'gemini_content': 'active',
-            'imagen_generation': 'active' if (IMAGEN_AVAILABLE and project_id) else 'not_configured'
-        }
-    }), 200
-
+# ==================== ERROR HANDLERS ====================
 
 @app.errorhandler(404)
 def not_found(error):
@@ -1114,29 +1121,17 @@ def request_entity_too_large(error):
 def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
-@app.route('/health')
-def health():
-    return {'status': 'healthy'}, 200
 
 # ==================== STARTUP ====================
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        print("=" * 50)
-        print("✓ Database ready!")
-        print("✓ Google Cloud Services:")
-        print("  - Speech-to-Text (Punjabi)")
-        print("  - Text-to-Speech (Punjabi)")
-        print("  - Translation API")
-        print("  - Gemini (Content Generation)")
-        if IMAGEN_AVAILABLE and project_id:
-            print("  - Imagen (Image Generation)")
-        elif not IMAGEN_AVAILABLE:
-            print("  ⚠ Imagen disabled (install: pip install google-cloud-aiplatform)")
-        else:
-            print("  ⚠ Imagen not configured (set GOOGLE_CLOUD_PROJECT_ID)")
-        print("=" * 50)
-        print("🚀 Server running on http://127.0.0.1:5001")
+    print("=" * 50)
+    print("✓ Running in development mode")
+    print("=" * 50)
     
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    # Get port from environment variable
+    port = int(os.environ.get('PORT', 5001))
+    print(f"🚀 Server starting on port {port}")
+    
+    # For development
+    app.run(debug=True, host='0.0.0.0', port=port)
