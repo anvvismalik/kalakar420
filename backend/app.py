@@ -14,7 +14,7 @@ import json
 import traceback
 from PIL import Image 
 import base64
-
+from sqlalchemy.engine.url import make_url
 # --- GOOGLE CLOUD IMPORTS ---
 from google.cloud import speech
 from google.cloud import texttospeech
@@ -103,30 +103,30 @@ else:
 app = Flask(__name__)
 
 # Database and Secret Key Configuration
-database_url = os.environ.get('DATABASE_URL')
+# Database and Secret Key Configuration
+raw_database_url = os.environ.get('DATABASE_URL')
 
-# Render's PostgreSQL URL starts with postgres://, but SQLAlchemy needs postgresql+psycopg://
-if database_url and database_url.startswith('postgres://'):
-    database_url = database_url.replace('postgres://', 'postgresql+psycopg://', 1)
+# Convert to use psycopg driver explicitly
+if raw_database_url:
+    # Parse and rebuild the URL with explicit psycopg driver
+    url_obj = make_url(raw_database_url)
+    
+    # Explicitly set the driver to psycopg
+    url_obj = url_obj.set(drivername="postgresql+psycopg")
+    
+    database_url = str(url_obj)
+    print(f"✓ Database configured with psycopg driver: {url_obj.drivername}")
+else:
+    database_url = None
+    print("⚠ No database URL found, using SQLite")
 
 # Use PostgreSQL in production, SQLite for local development
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///db.sqlite'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# Engine options - explicitly use psycopg driver
-if database_url:
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
-        'connect_args': {
-            'connect_timeout': 10,
-        }
-    }
-else:
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
-    }
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+}
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'a_super_secret_key_change_in_production'
 
 print(f"✓ Database: {'PostgreSQL (Production)' if database_url else 'SQLite (Development)'}")
