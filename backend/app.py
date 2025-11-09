@@ -105,11 +105,10 @@ app = Flask(__name__)
 # Database and Secret Key Configuration
 database_url = os.environ.get('DATABASE_URL')
 
-# Render's PostgreSQL URL starts with postgres://, but SQLAlchemy needs postgresql://
+# Render's PostgreSQL URL starts with postgres://, but SQLAlchemy needs postgresql+psycopg://
 if database_url and database_url.startswith('postgres://'):
     database_url = database_url.replace('postgres://', 'postgresql+psycopg://', 1)
 
-# Use PostgreSQL in production, SQLite for local development
 # Use PostgreSQL in production, SQLite for local development
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///db.sqlite'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
