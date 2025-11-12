@@ -33,7 +33,7 @@ except ImportError:
 # Load environment variables
 load_dotenv(find_dotenv())
 
-# --- GOOGLE CLOUD CREDENTIALS SETUP ---
+# --- GOOGLE CLOUD CREDENTIALS SETUP --
 def get_google_credentials():
     """
     Load Google Cloud credentials from environment variable or file
@@ -125,20 +125,12 @@ else:
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///db.sqlite'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Engine options with SSL for production database
-if database_url:
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
-        'connect_args': {
-            'sslmode': 'require'
-        }
-    }
-else:
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_pre_ping': True,
-        'pool_recycle': 300,
-    }
+# Engine options for connection pooling (simplified for SQLite)
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,
+    'pool_recycle': 300,
+}
+
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'a_super_secret_key_change_in_production'
 
 print(f"✓ Database: {'PostgreSQL (Production)' if database_url else 'SQLite (Development)'}")
@@ -729,7 +721,8 @@ def start_conversation():
             'question': first_question['question_pa'],
             'question_en': first_question['question_en'],
             'step': 'greeting',
-            'audio_url': f'{request.host_url.rstrip("/")}audio/{audio_filename}' if audio_file else None,
+            # FIX 1: Added missing '/' to ensure correct absolute URL
+            'audio_url': f'{request.host_url.rstrip("/")}/audio/{audio_filename}' if audio_file else None,
             'progress': 0
         }), 200
     except Exception as e:
@@ -817,7 +810,8 @@ def respond_to_conversation():
             'next_question': next_step['question_pa'],
             'next_question_en': next_step['question_en'],
             'step': next_step['step'],
-            'audio_url': f'{request.host_url.rstrip("/")}audio/{audio_filename}' if audio_file else None,
+            # FIX 1: Added missing '/' to ensure correct absolute URL
+            'audio_url': f'{request.host_url.rstrip("/")}/audio/{audio_filename}' if audio_file else None,
             'progress': progress
         }), 200
     except Exception as e:
