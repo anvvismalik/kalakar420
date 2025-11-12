@@ -729,7 +729,7 @@ def start_conversation():
             'question': first_question['question_pa'],
             'question_en': first_question['question_en'],
             'step': 'greeting',
-            'audio_url': f'/audio/{audio_filename}' if audio_file else None,
+            'audio_url': f'{request.host_url.rstrip("/")}audio/{audio_filename}' if audio_file else None,
             'progress': 0
         }), 200
     except Exception as e:
@@ -817,7 +817,7 @@ def respond_to_conversation():
             'next_question': next_step['question_pa'],
             'next_question_en': next_step['question_en'],
             'step': next_step['step'],
-            'audio_url': f'/audio/{audio_filename}' if audio_file else None,
+            'audio_url': f'{request.host_url.rstrip("/")}audio/{audio_filename}' if audio_file else None,
             'progress': progress
         }), 200
     except Exception as e:
