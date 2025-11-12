@@ -33,7 +33,7 @@ except ImportError:
 # Load environment variables
 load_dotenv(find_dotenv())
 
-# --- GOOGLE CLOUD CREDENTIALS SETUP --
+# --- GOOGLE CLOUD CREDENTIALS SETUP ---
 def get_google_credentials():
     """
     Load Google Cloud credentials from environment variable or file
@@ -721,7 +721,7 @@ def start_conversation():
             'question': first_question['question_pa'],
             'question_en': first_question['question_en'],
             'step': 'greeting',
-            # FIX 1: Added missing '/' to ensure correct absolute URL
+            # FIX 1: Corrected absolute URL construction with missing slash
             'audio_url': f'{request.host_url.rstrip("/")}/audio/{audio_filename}' if audio_file else None,
             'progress': 0
         }), 200
@@ -810,7 +810,7 @@ def respond_to_conversation():
             'next_question': next_step['question_pa'],
             'next_question_en': next_step['question_en'],
             'step': next_step['step'],
-            # FIX 1: Added missing '/' to ensure correct absolute URL
+            # FIX 1: Corrected absolute URL construction with missing slash
             'audio_url': f'{request.host_url.rstrip("/")}/audio/{audio_filename}' if audio_file else None,
             'progress': progress
         }), 200
