@@ -1225,7 +1225,50 @@ Generate ONLY the post content, nothing else."""
             'traceback': traceback.format_exc()
         }), 500
 # ==================== ERROR HANDLERS ====================
-
+@app.route('/api/test-gemini', methods=['GET'])
+def test_gemini():
+    """Test endpoint to check available Gemini models"""
+    try:
+        api_key = os.environ.get('GEMINI_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'GEMINI_API_KEY not configured'}), 500
+        
+        # List available models
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code == 200:
+            models = response.json()
+            available_models = [m.get('name', '') for m in models.get('models', [])]
+            
+            # Test simple generation with gemini-1.5-pro-latest
+            test_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={api_key}"
+            test_payload = {
+                "contents": [{
+                    "parts": [{"text": "Say 'Hello World' in one word"}]
+                }]
+            }
+            
+            test_response = requests.post(test_url, json=test_payload, timeout=10)
+            
+            return jsonify({
+                'api_key_valid': True,
+                'available_models': available_models,
+                'test_generation': {
+                    'status': test_response.status_code,
+                    'success': test_response.status_code == 200,
+                    'response': test_response.json() if test_response.status_code == 200 else test_response.text
+                }
+            }), 200
+        else:
+            return jsonify({
+                'error': 'Failed to list models',
+                'status': response.status_code,
+                'response': response.text
+            }), response.status_code
+            
+    except Exception as e:
+        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({'error': 'Route not found'}), 404
