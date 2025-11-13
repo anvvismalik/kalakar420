@@ -1156,7 +1156,8 @@ Generate ONLY the post content, nothing else."""
                 if not api_key:
                     raise Exception("GEMINI_API_KEY not configured")
                 
-                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-exp:generateContent?key={api_key}"
+                # url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-exp:generateContent?key={api_key}"
+                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
                 
                 headers = {'Content-Type': 'application/json'}
                 
@@ -1222,7 +1223,7 @@ Generate ONLY the post content, nothing else."""
             'success': True,
             'platforms': selected_platforms,
             'content': platform_content,
-            'model_used': 'gemini-2.0-flash-exp'
+            'model_used': 'gemini-1.5-flash'
         }), 200
         
     except Exception as e:
