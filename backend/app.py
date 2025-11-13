@@ -1140,7 +1140,7 @@ Generate ONLY the post content, nothing else."""
             'success': True,
             'platforms': selected_platforms,
             'content': platform_content,
-            'model_used': 'gemini-1.5-flash'
+            'model_used': 'gemini-2.5-flash'
         }), 200
         
     except Exception as e:
