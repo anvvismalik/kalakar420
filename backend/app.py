@@ -154,6 +154,7 @@ GENERATED_IMAGES_FOLDER = 'generated_images'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  
 
+# Find this section (around line 170):
 CORS(app, 
      supports_credentials=True,
      origins=[
@@ -173,7 +174,7 @@ CORS(app,
      max_age=3600,
      send_wildcard=False,
      always_send=True
-) 
+)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['AUDIO_FOLDER'] = AUDIO_FOLDER
@@ -1010,24 +1011,77 @@ def serve_audio(filename):
 @app.route('/api/conversation/generate', methods=['POST'])
 def generate_from_conversation():
     try:
+        print("=" * 60)
+        print("🔥 GENERATE CONTENT REQUEST RECEIVED")
+        print("=" * 60)
+        
         data = request.get_json()
+        print(f"📦 Request Data: {data}")
+        
+        if not data:
+            print("❌ No data received in request")
+            return jsonify({'error': 'No data received'}), 400
+        
         session_id = data.get('session_id')
         image_url = data.get('image_url')
         selected_platforms = data.get('platforms', ['instagram', 'facebook'])
         
+        print(f"📝 Session ID: {session_id}")
+        print(f"🖼️  Image URL: {image_url}")
+        print(f"📱 Platforms: {selected_platforms}")
+        
+        if not session_id:
+            print("❌ Missing session_id")
+            return jsonify({'error': 'session_id required'}), 400
+        
         user = get_current_user()
         if not user:
+            print("❌ User not authenticated")
             return jsonify({'error': 'Not authenticated'}), 401
+        
+        print(f"👤 User ID: {user.id}")
         
         conversation = Conversation.query.filter_by(session_id=session_id, user_id=user.id).first()
         
-        if not conversation or not conversation.is_complete:
-            return jsonify({'error': 'Conversation not complete'}), 400
+        if not conversation:
+            print("❌ Conversation not found")
+            return jsonify({'error': 'Conversation not found'}), 404
         
-        collected_info = json.loads(conversation.collected_info)
+        if not conversation.is_complete:
+            print(f"❌ Conversation not complete. Current step: {conversation.current_step}")
+            return jsonify({
+                'error': 'Conversation must be completed first',
+                'current_step': conversation.current_step
+            }), 400
         
+        print("✅ Conversation found and complete")
+        
+        # Parse collected info
+        try:
+            collected_info = json.loads(conversation.collected_info)
+            print(f"✅ Collected Info: {collected_info}")
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON Decode Error: {str(e)}")
+            return jsonify({
+                'error': 'Invalid conversation data',
+                'details': str(e)
+            }), 500
+        
+        # Validate required fields
+        required_fields = ['craft_type', 'product_name']
+        missing_fields = [f for f in required_fields if f not in collected_info]
+        
+        if missing_fields:
+            print(f"❌ Missing fields: {missing_fields}")
+            return jsonify({
+                'error': 'Incomplete product information',
+                'missing_fields': missing_fields
+            }), 400
+        
+        print("✅ All required fields present")
+        
+        # Build product details
         product_details_list = []
-        
         fields_to_extract = [
             ("craft_type", "Craft Type"),
             ("product_name", "Product Name"),
@@ -1038,32 +1092,46 @@ def generate_from_conversation():
         
         for field_key, field_title in fields_to_extract:
             info_entry = collected_info.get(field_key, {})
-            english_value = info_entry.get('english', 'MISSING CONVERSATION DATA')
+            english_value = info_entry.get('english', 'Not provided')
             product_details_list.append(f"**{field_title}**: {english_value}")
         
         product_text = "\n".join(product_details_list)
-
+        print(f"📄 Product Text:\n{product_text}")
+        
+        # Load image if provided
         image_part = None
         if image_url:
             try:
+                print(f"🖼️  Loading image from: {image_url}")
                 image_filename = os.path.basename(image_url)
                 image_filepath = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
                 
                 if os.path.exists(image_filepath):
+                    print(f"✅ Image found locally: {image_filepath}")
                     image_part = Image.open(image_filepath)
                 else:
+                    print(f"⚠️  Image not found locally, fetching from URL")
                     image_response = requests.get(image_url, stream=True, timeout=10)
                     if image_response.status_code == 200:
                         image_part = Image.open(io.BytesIO(image_response.content))
+                        print("✅ Image loaded from URL")
+                    else:
+                        print(f"❌ Failed to fetch image: {image_response.status_code}")
             except Exception as e:
-                print(f"Error loading image: {str(e)}")
-
+                print(f"⚠️  Error loading image: {str(e)}")
+                # Continue without image
+        
         platform_content = {}
+        
+        print(f"🎨 Generating content for {len(selected_platforms)} platforms...")
         
         for platform_id in selected_platforms:
             platform = next((p for p in PLATFORMS if p['id'] == platform_id), None)
             if not platform:
+                print(f"⚠️  Platform not found: {platform_id}")
                 continue
+            
+            print(f"📝 Generating for {platform['name']}...")
             
             prompt = f"""You are an expert content creator helping an artisan (Kalakaar) generate engaging social media posts.
 
@@ -1083,11 +1151,12 @@ Requirements:
 
 Generate ONLY the post content, nothing else."""
 
-            
-
             try:
                 api_key = os.environ.get('GEMINI_API_KEY')
-                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
+                if not api_key:
+                    raise Exception("GEMINI_API_KEY not configured")
+                
+                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-exp:generateContent?key={api_key}"
                 
                 headers = {'Content-Type': 'application/json'}
                 
@@ -1110,8 +1179,13 @@ Generate ONLY the post content, nothing else."""
                             "data": img_str
                         }
                     })
+                    print(f"✅ Image added to {platform['name']} request")
+                
+                print(f"🚀 Calling Gemini API for {platform['name']}...")
                 response = requests.post(url, headers=headers, json=payload, timeout=30)
-    
+                
+                print(f"📡 Gemini Response Status: {response.status_code}")
+                
                 if response.status_code == 200:
                     result = response.json()
                     generated_text = result['candidates'][0]['content']['parts'][0]['text']
@@ -1122,9 +1196,14 @@ Generate ONLY the post content, nothing else."""
                         'char_limit': platform['char_limit'],
                         'format_type': platform['best_for']
                     }
+                    print(f"✅ Content generated for {platform['name']}")
                 else:
-                    raise Exception(f"API error {response.status_code}: {response.text}")
+                    error_text = response.text
+                    print(f"❌ Gemini API error: {error_text}")
+                    raise Exception(f"API error {response.status_code}: {error_text}")
+                    
             except Exception as e:
+                print(f"❌ Error generating for {platform['name']}: {str(e)}")
                 traceback.print_exc()
                 platform_content[platform_id] = {
                     'platform': platform['name'],
@@ -1134,17 +1213,28 @@ Generate ONLY the post content, nothing else."""
                     'error': True
                 }
         
+        print("=" * 60)
+        print("✅ CONTENT GENERATION COMPLETE")
+        print(f"📊 Generated for {len(platform_content)} platforms")
+        print("=" * 60)
+        
         return jsonify({
             'success': True,
             'platforms': selected_platforms,
             'content': platform_content,
-            'model_used': 'gemini-2.5-flash'
+            'model_used': 'gemini-2.0-flash-exp'
         }), 200
         
     except Exception as e:
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
+        print("=" * 60)
+        print("❌ FATAL ERROR IN GENERATE:")
+        print(traceback.format_exc())
+        print("=" * 60)
+        return jsonify({
+            'error': 'Internal server error',
+            'details': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 # ==================== ERROR HANDLERS ====================
 
