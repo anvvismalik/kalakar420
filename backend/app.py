@@ -1086,7 +1086,7 @@ Requirements:
 Generate ONLY the post content, nothing else."""
 
             try:
-                model = genai.GenerativeModel('gemini-pro')
+                model = genai.GenerativeModel('gemini-1.5-flash-latest')
                 
                 contents = [prompt]
                 if image_part:
