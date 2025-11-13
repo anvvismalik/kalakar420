@@ -721,7 +721,7 @@ def start_conversation():
             'question': first_question['question_pa'],
             'question_en': first_question['question_en'],
             'step': 'greeting',
-            # FIX: Corrected absolute URL construction with missing slash
+            # FIX 1: Corrected absolute URL construction with missing slash
             'audio_url': f'{request.host_url.rstrip("/")}/audio/{audio_filename}' if audio_file else None,
             'progress': 0
         }), 200
@@ -962,51 +962,113 @@ def generate_product_images():
         }), 200
         
     except Exception as e:
-        # FIX 2: Check for API error and correct the model name in the URL string
-        if "API error 404" in str(e) or "gemini-1.5-flash" in str(e) or "gemini-2.0-flash-exp" in str(e):
-            
-            print("[GEMINI] Found incorrect model name in API call. Retrying with gemini-2.5-flash.")
-            
-            # --- Code to execute the fixed API call ---
+        print(f"[IMAGE_GEN] Unexpected error: {e}")
+        traceback.print_exc()
+        return jsonify({
+            'error': 'Internal server error',
+            'details': str(e),
+            'success': False
+        }), 500
+
+
+# ==================== IMAGE & CONTENT GENERATION ====================
+
+@app.route('/api/upload_image', methods=['POST'])
+def upload_image():
+    try:
+        file = request.files['image']
+        timestamp = int(time.time())
+        filename = f"{timestamp}_{secure_filename(file.filename)}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
+        image_url = f'{base_url}/uploads/{filename}'
+        
+        return jsonify({'message': 'Image uploaded!', 'image_url': image_url}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/uploads/<filename>')
+def serve_image(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+@app.route('/generated_images/<filename>')
+def serve_generated_image(filename):
+    """Serve AI generated images"""
+    try:
+        return send_from_directory(app.config['GENERATED_IMAGES_FOLDER'], filename)
+    except FileNotFoundError:
+        return jsonify({'error': 'Image not found'}), 404
+
+
+@app.route('/audio/<filename>')
+def serve_audio(filename):
+    return send_from_directory(app.config['AUDIO_FOLDER'], filename, mimetype='audio/mpeg')
+
+
+@app.route('/api/conversation/generate', methods=['POST'])
+def generate_from_conversation():
+    try:
+        data = request.get_json()
+        session_id = data.get('session_id')
+        image_url = data.get('image_url')
+        selected_platforms = data.get('platforms', ['instagram', 'facebook'])
+        
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        conversation = Conversation.query.filter_by(session_id=session_id, user_id=user.id).first()
+        
+        if not conversation or not conversation.is_complete:
+            return jsonify({'error': 'Conversation not complete'}), 400
+        
+        collected_info = json.loads(conversation.collected_info)
+        
+        product_details_list = []
+        
+        fields_to_extract = [
+            ("craft_type", "Craft Type"),
+            ("product_name", "Product Name"),
+            ("materials", "Materials"),
+            ("process", "Process"),
+            ("special_features", "Special Features")
+        ]
+        
+        for field_key, field_title in fields_to_extract:
+            info_entry = collected_info.get(field_key, {})
+            english_value = info_entry.get('english', 'MISSING CONVERSATION DATA')
+            product_details_list.append(f"**{field_title}**: {english_value}")
+        
+        product_text = "\n".join(product_details_list)
+
+        image_part = None
+        if image_url:
             try:
-                # Re-extract necessary parts of the request
-                data = request.get_json()
-                session_id = data.get('session_id')
-                image_url = data.get('image_url')
-
-                user = get_current_user()
-                conversation = Conversation.query.filter_by(session_id=session_id, user_id=user.id).first()
-                collected_info = json.loads(conversation.collected_info)
-
-                product_details_list = []
-                fields_to_extract = [
-                    ("craft_type", "Craft Type"),
-                    ("product_name", "Product Name"),
-                    ("materials", "Materials"),
-                    ("process", "Process"),
-                    ("special_features", "Special Features")
-                ]
-                for field_key, field_title in fields_to_extract:
-                    info_entry = collected_info.get(field_key, {})
-                    english_value = info_entry.get('english', 'MISSING CONVERSATION DATA')
-                    product_details_list.append(f"**{field_title}**: {english_value}")
-                product_text = "\n".join(product_details_list)
+                image_filename = os.path.basename(image_url)
+                image_filepath = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
                 
-                # Recreate image_part logic
-                image_part = None
-                if image_url:
+                if os.path.exists(image_filepath):
+                    image_part = Image.open(image_filepath)
+                else:
                     image_response = requests.get(image_url, stream=True, timeout=10)
                     if image_response.status_code == 200:
                         image_part = Image.open(io.BytesIO(image_response.content))
+            except Exception as e:
+                print(f"Error loading image: {str(e)}")
 
-                platform_content = {}
-                selected_platforms = data.get('platforms', ['instagram', 'facebook'])
-                
-                for platform_id in selected_platforms:
-                    platform = next((p for p in PLATFORMS if p['id'] == platform_id), None)
-                    if not platform: continue
+        platform_content = {}
+        
+        for platform_id in selected_platforms:
+            platform = next((p for p in PLATFORMS if p['id'] == platform_id), None)
+            if not platform:
+                continue
+            
+            prompt = f"""You are an expert content creator helping an artisan (Kalakaar) generate engaging social media posts.
 
-                    prompt = f"""You are an expert content creator helping an artisan (Kalakaar) generate engaging social media posts.
 Create a compelling and authentic {platform['name']} post for the following handcrafted product.
 Analyze the visual details from the image (if provided) and weave them with the textual details below.
 
@@ -1022,74 +1084,68 @@ Requirements:
 - The post must be engaging and encourage comments/shares.
 
 Generate ONLY the post content, nothing else."""
-                    
-                    api_key = os.environ.get('GEMINI_API_KEY')
-                    
-                    # *** CRITICAL FIX: Use gemini-2.5-flash in the URL ***
-                    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
-                    
-                    headers = {'Content-Type': 'application/json'}
-                    
-                    payload = {
-                        "contents": [{
-                            "parts": [{"text": prompt}]
-                        }]
-                    }
 
-                    if image_part:
-                        import base64
-                        from io import BytesIO
-                        buffered = BytesIO()
-                        image_part.save(buffered, format="PNG")
-                        img_str = base64.b64encode(buffered.getvalue()).decode()
-                        
-                        payload["contents"][0]["parts"].insert(0, {
-                            "inline_data": {
-                                "mime_type": "image/png",
-                                "data": img_str
-                            }
-                        })
-                    
-                    response = requests.post(url, headers=headers, json=payload, timeout=30)
-                    
-                    if response.status_code == 200:
-                        result = response.json()
-                        generated_text = result['candidates'][0]['content']['parts'][0]['text']
-                        
-                        platform_content[platform_id] = {
-                            'platform': platform['name'],
-                            'content': generated_text.strip(),
-                            'char_limit': platform['char_limit'],
-                            'format_type': platform['best_for']
-                        }
-                    else:
-                        raise Exception(f"API error {response.status_code}: {response.text}")
+            
 
-
-                return jsonify({
-                    'success': True,
-                    'platforms': selected_platforms,
-                    'content': platform_content,
-                    'model_used': 'gemini-2.5-flash'
-                }), 200
+            try:
+                api_key = os.environ.get('GEMINI_API_KEY')
+                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={api_key}"
                 
-            except Exception as corrected_e:
-                print(f"[GEMINI] Final attempt failed: {corrected_e}")
-                traceback.print_exc()
-                return jsonify({
-                    'error': 'Content generation failed after model fix.',
-                    'details': str(corrected_e),
-                    'success': False
-                }), 500
+                headers = {'Content-Type': 'application/json'}
+                
+                payload = {
+                    "contents": [{
+                        "parts": [{"text": prompt}]
+                    }]
+                }
 
-        # Original generic error for anything else
-        print(f"[IMAGE_GEN] Unexpected error: {e}")
-        traceback.print_exc()
+                if image_part:
+                    import base64
+                    from io import BytesIO
+                    buffered = BytesIO()
+                    image_part.save(buffered, format="PNG")
+                    img_str = base64.b64encode(buffered.getvalue()).decode()
+                    
+                    payload["contents"][0]["parts"].insert(0, {
+                        "inline_data": {
+                            "mime_type": "image/png",
+                            "data": img_str
+                        }
+                    })
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+    
+                if response.status_code == 200:
+                    result = response.json()
+                    generated_text = result['candidates'][0]['content']['parts'][0]['text']
+                    
+                    platform_content[platform_id] = {
+                        'platform': platform['name'],
+                        'content': generated_text.strip(),
+                        'char_limit': platform['char_limit'],
+                        'format_type': platform['best_for']
+                    }
+                else:
+                    raise Exception(f"API error {response.status_code}: {response.text}")
+            except Exception as e:
+                traceback.print_exc()
+                platform_content[platform_id] = {
+                    'platform': platform['name'],
+                    'content': f'Error generating content: {str(e)}',
+                    'char_limit': platform['char_limit'],
+                    'format_type': platform['best_for'],
+                    'error': True
+                }
+        
         return jsonify({
-            'error': 'Internal server error',
-            'details': str(e),
-            'success': False
-        }), 500
+            'success': True,
+            'platforms': selected_platforms,
+            'content': platform_content,
+            'model_used': 'gemini-2.5-flash'
+        }), 200
+        
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 
 # ==================== ERROR HANDLERS ====================
