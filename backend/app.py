@@ -1085,21 +1085,47 @@ Requirements:
 
 Generate ONLY the post content, nothing else."""
 
+            
+
             try:
-                model = genai.GenerativeModel(model_name='gemini-1.5-flash')
+                api_key = os.environ.get('GEMINI_API_KEY')
+                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
                 
-                contents = [prompt]
-                if image_part:
-                    contents.insert(0, image_part)
+                headers = {'Content-Type': 'application/json'}
                 
-                response = model.generate_content(contents)
-                
-                platform_content[platform_id] = {
-                    'platform': platform['name'],
-                    'content': response.text.strip(),
-                    'char_limit': platform['char_limit'],
-                    'format_type': platform['best_for']
+                payload = {
+                    "contents": [{
+                        "parts": [{"text": prompt}]
+                    }]
                 }
+
+                if image_part:
+                    import base64
+                    from io import BytesIO
+                    buffered = BytesIO()
+                    image_part.save(buffered, format="PNG")
+                    img_str = base64.b64encode(buffered.getvalue()).decode()
+                    
+                    payload["contents"][0]["parts"].insert(0, {
+                        "inline_data": {
+                            "mime_type": "image/png",
+                            "data": img_str
+                        }
+                    })
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+    
+                if response.status_code == 200:
+                    result = response.json()
+                    generated_text = result['candidates'][0]['content']['parts'][0]['text']
+                    
+                    platform_content[platform_id] = {
+                        'platform': platform['name'],
+                        'content': generated_text.strip(),
+                        'char_limit': platform['char_limit'],
+                        'format_type': platform['best_for']
+                    }
+                else:
+                    raise Exception(f"API error {response.status_code}: {response.text}")
             except Exception as e:
                 traceback.print_exc()
                 platform_content[platform_id] = {
@@ -1114,7 +1140,7 @@ Generate ONLY the post content, nothing else."""
             'success': True,
             'platforms': selected_platforms,
             'content': platform_content,
-            'model_used': 'gemini-2.0-flash-exp'
+            'model_used': 'gemini-1.5-flash'
         }), 200
         
     except Exception as e:
