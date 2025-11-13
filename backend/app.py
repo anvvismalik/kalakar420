@@ -154,7 +154,7 @@ GENERATED_IMAGES_FOLDER = 'generated_images'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  
 
-for CORS(app, 
+CORS(app, 
      supports_credentials=True,
      origins=[
          "https://kalakar420.vercel.app",
@@ -173,9 +173,7 @@ for CORS(app,
      max_age=3600,
      send_wildcard=False,
      always_send=True
-) in [UPLOAD_FOLDER, AUDIO_FOLDER, GENERATED_IMAGES_FOLDER]:
-    if not os.path.exists(folder):
-        os.makedirs(folder)
+) 
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['AUDIO_FOLDER'] = AUDIO_FOLDER
