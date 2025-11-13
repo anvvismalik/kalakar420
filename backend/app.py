@@ -1026,8 +1026,8 @@ def generate_from_conversation():
         image_url = data.get('image_url')
         selected_platforms = data.get('platforms', ['instagram', 'facebook'])
         
-        print(f"📝 Session ID: {session_id}")
-        print(f"🖼️  Image URL: {image_url}")
+        print(f"🔑 Session ID: {session_id}")
+        print(f"🖼️ Image URL: {image_url}")
         print(f"📱 Platforms: {selected_platforms}")
         
         if not session_id:
@@ -1102,7 +1102,7 @@ def generate_from_conversation():
         image_part = None
         if image_url:
             try:
-                print(f"🖼️  Loading image from: {image_url}")
+                print(f"🖼️ Loading image from: {image_url}")
                 image_filename = os.path.basename(image_url)
                 image_filepath = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
                 
@@ -1110,7 +1110,7 @@ def generate_from_conversation():
                     print(f"✅ Image found locally: {image_filepath}")
                     image_part = Image.open(image_filepath)
                 else:
-                    print(f"⚠️  Image not found locally, fetching from URL")
+                    print(f"⚠️ Image not found locally, fetching from URL")
                     image_response = requests.get(image_url, stream=True, timeout=10)
                     if image_response.status_code == 200:
                         image_part = Image.open(io.BytesIO(image_response.content))
@@ -1118,7 +1118,7 @@ def generate_from_conversation():
                     else:
                         print(f"❌ Failed to fetch image: {image_response.status_code}")
             except Exception as e:
-                print(f"⚠️  Error loading image: {str(e)}")
+                print(f"⚠️ Error loading image: {str(e)}")
                 # Continue without image
         
         platform_content = {}
@@ -1128,7 +1128,7 @@ def generate_from_conversation():
         for platform_id in selected_platforms:
             platform = next((p for p in PLATFORMS if p['id'] == platform_id), None)
             if not platform:
-                print(f"⚠️  Platform not found: {platform_id}")
+                print(f"⚠️ Platform not found: {platform_id}")
                 continue
             
             print(f"📝 Generating for {platform['name']}...")
@@ -1152,57 +1152,25 @@ Requirements:
 Generate ONLY the post content, nothing else."""
 
             try:
-                api_key = os.environ.get('GEMINI_API_KEY')
-                if not api_key:
-                    raise Exception("GEMINI_API_KEY not configured")
+                # Use the genai SDK
+                model = genai.GenerativeModel('gemini-1.5-flash')
                 
-                # url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-exp:generateContent?key={api_key}"
-                url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
-                
-                headers = {'Content-Type': 'application/json'}
-                
-                payload = {
-                    "contents": [{
-                        "parts": [{"text": prompt}]
-                    }]
-                }
-
                 if image_part:
-                    import base64
-                    from io import BytesIO
-                    buffered = BytesIO()
-                    image_part.save(buffered, format="PNG")
-                    img_str = base64.b64encode(buffered.getvalue()).decode()
-                    
-                    payload["contents"][0]["parts"].insert(0, {
-                        "inline_data": {
-                            "mime_type": "image/png",
-                            "data": img_str
-                        }
-                    })
-                    print(f"✅ Image added to {platform['name']} request")
-                
-                print(f"🚀 Calling Gemini API for {platform['name']}...")
-                response = requests.post(url, headers=headers, json=payload, timeout=30)
-                
-                print(f"📡 Gemini Response Status: {response.status_code}")
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    generated_text = result['candidates'][0]['content']['parts'][0]['text']
-                    
-                    platform_content[platform_id] = {
-                        'platform': platform['name'],
-                        'content': generated_text.strip(),
-                        'char_limit': platform['char_limit'],
-                        'format_type': platform['best_for']
-                    }
-                    print(f"✅ Content generated for {platform['name']}")
+                    response = model.generate_content([prompt, image_part])
+                    print(f"✅ Image included for {platform['name']}")
                 else:
-                    error_text = response.text
-                    print(f"❌ Gemini API error: {error_text}")
-                    raise Exception(f"API error {response.status_code}: {error_text}")
-                    
+                    response = model.generate_content(prompt)
+                
+                generated_text = response.text
+                
+                platform_content[platform_id] = {
+                    'platform': platform['name'],
+                    'content': generated_text.strip(),
+                    'char_limit': platform['char_limit'],
+                    'format_type': platform['best_for']
+                }
+                print(f"✅ Content generated for {platform['name']}")
+                
             except Exception as e:
                 print(f"❌ Error generating for {platform['name']}: {str(e)}")
                 traceback.print_exc()
@@ -1236,7 +1204,6 @@ Generate ONLY the post content, nothing else."""
             'details': str(e),
             'traceback': traceback.format_exc()
         }), 500
-
 # ==================== ERROR HANDLERS ====================
 
 @app.errorhandler(404)
