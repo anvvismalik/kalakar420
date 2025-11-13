@@ -1152,24 +1152,44 @@ Requirements:
 Generate ONLY the post content, nothing else."""
 
             try:
-                # Use the genai SDK
-                model = genai.GenerativeModel('gemini-1.5-flash')
+                # Try multiple model names to find one that works
+                model_names = [
+                    'gemini-pro-vision',  # For image + text
+                    'gemini-pro',         # For text only
+                    'models/gemini-pro-vision',
+                    'models/gemini-pro'
+                ]
                 
-                if image_part:
-                    response = model.generate_content([prompt, image_part])
-                    print(f"✅ Image included for {platform['name']}")
-                else:
-                    response = model.generate_content(prompt)
+                success = False
+                for model_name in model_names:
+                    try:
+                        print(f"🔄 Trying model: {model_name}")
+                        model = genai.GenerativeModel(model_name)
+                        
+                        if image_part and 'vision' in model_name:
+                            response = model.generate_content([prompt, image_part])
+                            print(f"✅ Image included for {platform['name']}")
+                        else:
+                            response = model.generate_content(prompt)
+                        
+                        generated_text = response.text
+                        
+                        platform_content[platform_id] = {
+                            'platform': platform['name'],
+                            'content': generated_text.strip(),
+                            'char_limit': platform['char_limit'],
+                            'format_type': platform['best_for']
+                        }
+                        print(f"✅ Content generated for {platform['name']} using {model_name}")
+                        success = True
+                        break
+                        
+                    except Exception as model_error:
+                        print(f"⚠️ Model {model_name} failed: {str(model_error)}")
+                        continue
                 
-                generated_text = response.text
-                
-                platform_content[platform_id] = {
-                    'platform': platform['name'],
-                    'content': generated_text.strip(),
-                    'char_limit': platform['char_limit'],
-                    'format_type': platform['best_for']
-                }
-                print(f"✅ Content generated for {platform['name']}")
+                if not success:
+                    raise Exception("All model attempts failed")
                 
             except Exception as e:
                 print(f"❌ Error generating for {platform['name']}: {str(e)}")
@@ -1191,7 +1211,7 @@ Generate ONLY the post content, nothing else."""
             'success': True,
             'platforms': selected_platforms,
             'content': platform_content,
-            'model_used': 'gemini-1.5-flash'
+            'model_used': 'gemini-pro'
         }), 200
         
     except Exception as e:
