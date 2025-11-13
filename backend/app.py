@@ -1100,6 +1100,7 @@ def generate_from_conversation():
         
         # Load image if provided
         image_part = None
+        image_base64 = None
         if image_url:
             try:
                 print(f"🖼️ Loading image from: {image_url}")
@@ -1109,21 +1110,37 @@ def generate_from_conversation():
                 if os.path.exists(image_filepath):
                     print(f"✅ Image found locally: {image_filepath}")
                     image_part = Image.open(image_filepath)
+                    
+                    # Convert to base64 for API
+                    buffered = io.BytesIO()
+                    image_part.save(buffered, format="PNG")
+                    image_base64 = base64.b64encode(buffered.getvalue()).decode()
                 else:
                     print(f"⚠️ Image not found locally, fetching from URL")
                     image_response = requests.get(image_url, stream=True, timeout=10)
                     if image_response.status_code == 200:
                         image_part = Image.open(io.BytesIO(image_response.content))
+                        
+                        # Convert to base64 for API
+                        buffered = io.BytesIO()
+                        image_part.save(buffered, format="PNG")
+                        image_base64 = base64.b64encode(buffered.getvalue()).decode()
                         print("✅ Image loaded from URL")
                     else:
                         print(f"❌ Failed to fetch image: {image_response.status_code}")
             except Exception as e:
                 print(f"⚠️ Error loading image: {str(e)}")
+                traceback.print_exc()
                 # Continue without image
         
         platform_content = {}
         
         print(f"🎨 Generating content for {len(selected_platforms)} platforms...")
+        
+        # Get API key
+        api_key = os.environ.get('GEMINI_API_KEY')
+        if not api_key:
+            return jsonify({'error': 'GEMINI_API_KEY not configured'}), 500
         
         for platform_id in selected_platforms:
             platform = next((p for p in PLATFORMS if p['id'] == platform_id), None)
@@ -1152,51 +1169,74 @@ Requirements:
 Generate ONLY the post content, nothing else."""
 
             try:
-                # Try multiple model names to find one that works
-                model_names = [
-                    'gemini-pro-vision',  # For image + text
-                    'gemini-pro',         # For text only
-                    'models/gemini-pro-vision',
-                    'models/gemini-pro'
-                ]
+                # Use gemini-1.5-pro-latest which is stable and available
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={api_key}"
                 
-                success = False
-                for model_name in model_names:
-                    try:
-                        print(f"🔄 Trying model: {model_name}")
-                        model = genai.GenerativeModel(model_name)
-                        
-                        if image_part and 'vision' in model_name:
-                            response = model.generate_content([prompt, image_part])
-                            print(f"✅ Image included for {platform['name']}")
-                        else:
-                            response = model.generate_content(prompt)
-                        
-                        generated_text = response.text
-                        
-                        platform_content[platform_id] = {
-                            'platform': platform['name'],
-                            'content': generated_text.strip(),
-                            'char_limit': platform['char_limit'],
-                            'format_type': platform['best_for']
+                headers = {'Content-Type': 'application/json'}
+                
+                # Build payload
+                parts = [{"text": prompt}]
+                
+                # Add image if available
+                if image_base64:
+                    parts.insert(0, {
+                        "inline_data": {
+                            "mime_type": "image/png",
+                            "data": image_base64
                         }
-                        print(f"✅ Content generated for {platform['name']} using {model_name}")
-                        success = True
-                        break
-                        
-                    except Exception as model_error:
-                        print(f"⚠️ Model {model_name} failed: {str(model_error)}")
-                        continue
+                    })
+                    print(f"✅ Image added to {platform['name']} request")
                 
-                if not success:
-                    raise Exception("All model attempts failed")
+                payload = {
+                    "contents": [{
+                        "parts": parts
+                    }],
+                    "generationConfig": {
+                        "temperature": 0.7,
+                        "maxOutputTokens": 2048,
+                    }
+                }
                 
+                print(f"🚀 Calling Gemini API for {platform['name']}...")
+                print(f"📡 URL: {url.split('?')[0]}")  # Don't print API key
+                
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                
+                print(f"📡 Gemini Response Status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    print(f"✅ Response received for {platform['name']}")
+                    
+                    # Extract text from response
+                    if 'candidates' in result and len(result['candidates']) > 0:
+                        candidate = result['candidates'][0]
+                        if 'content' in candidate and 'parts' in candidate['content']:
+                            generated_text = candidate['content']['parts'][0].get('text', '')
+                            
+                            platform_content[platform_id] = {
+                                'platform': platform['name'],
+                                'content': generated_text.strip(),
+                                'char_limit': platform['char_limit'],
+                                'format_type': platform['best_for']
+                            }
+                            print(f"✅ Content generated for {platform['name']}")
+                        else:
+                            raise Exception("Invalid response structure - no content parts")
+                    else:
+                        raise Exception("Invalid response structure - no candidates")
+                else:
+                    error_text = response.text
+                    print(f"❌ Gemini API error: {error_text}")
+                    raise Exception(f"API error {response.status_code}: {error_text}")
+                    
             except Exception as e:
-                print(f"❌ Error generating for {platform['name']}: {str(e)}")
+                error_msg = str(e)
+                print(f"❌ Error generating for {platform['name']}: {error_msg}")
                 traceback.print_exc()
                 platform_content[platform_id] = {
                     'platform': platform['name'],
-                    'content': f'Error generating content: {str(e)}',
+                    'content': f'Error generating content: {error_msg}',
                     'char_limit': platform['char_limit'],
                     'format_type': platform['best_for'],
                     'error': True
@@ -1211,7 +1251,7 @@ Generate ONLY the post content, nothing else."""
             'success': True,
             'platforms': selected_platforms,
             'content': platform_content,
-            'model_used': 'gemini-pro'
+            'model_used': 'gemini-1.5-pro-latest'
         }), 200
         
     except Exception as e:
@@ -1225,50 +1265,7 @@ Generate ONLY the post content, nothing else."""
             'traceback': traceback.format_exc()
         }), 500
 # ==================== ERROR HANDLERS ====================
-@app.route('/api/test-gemini', methods=['GET'])
-def test_gemini():
-    """Test endpoint to check available Gemini models"""
-    try:
-        api_key = os.environ.get('GEMINI_API_KEY')
-        if not api_key:
-            return jsonify({'error': 'GEMINI_API_KEY not configured'}), 500
-        
-        # List available models
-        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-        response = requests.get(url, timeout=10)
-        
-        if response.status_code == 200:
-            models = response.json()
-            available_models = [m.get('name', '') for m in models.get('models', [])]
-            
-            # Test simple generation with gemini-1.5-pro-latest
-            test_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={api_key}"
-            test_payload = {
-                "contents": [{
-                    "parts": [{"text": "Say 'Hello World' in one word"}]
-                }]
-            }
-            
-            test_response = requests.post(test_url, json=test_payload, timeout=10)
-            
-            return jsonify({
-                'api_key_valid': True,
-                'available_models': available_models,
-                'test_generation': {
-                    'status': test_response.status_code,
-                    'success': test_response.status_code == 200,
-                    'response': test_response.json() if test_response.status_code == 200 else test_response.text
-                }
-            }), 200
-        else:
-            return jsonify({
-                'error': 'Failed to list models',
-                'status': response.status_code,
-                'response': response.text
-            }), response.status_code
-            
-    except Exception as e:
-        return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
+
 @app.errorhandler(404)
 def not_found(error):
     return jsonify({'error': 'Route not found'}), 404
