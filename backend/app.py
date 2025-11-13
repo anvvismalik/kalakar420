@@ -145,12 +145,19 @@ app.config['SESSION_COOKIE_NAME'] = 'kalakar_session'
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400
 
 # Configure CORS
-CORS(app, 
-     supports_credentials=True, 
+
+
+# File Upload Configuration
+UPLOAD_FOLDER = 'uploads'
+AUDIO_FOLDER = 'audio_responses'
+GENERATED_IMAGES_FOLDER = 'generated_images'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+MAX_FILE_SIZE = 50 * 1024 * 1024  
+
+for CORS(app, 
+     supports_credentials=True,
      origins=[
-         # Production frontend
          "https://kalakar420.vercel.app",
-         # Development origins
          "http://localhost:5173",
          "http://127.0.0.1:5173",
          "http://localhost:3000",
@@ -160,20 +167,13 @@ CORS(app,
          "http://localhost:5001", 
          "http://127.0.0.1:5001"
      ],
-     allow_headers=["Content-Type", "Authorization", "Cookie"],
-     expose_headers=["Set-Cookie"],
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-     max_age=3600
-)
-
-# File Upload Configuration
-UPLOAD_FOLDER = 'uploads'
-AUDIO_FOLDER = 'audio_responses'
-GENERATED_IMAGES_FOLDER = 'generated_images'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-MAX_FILE_SIZE = 50 * 1024 * 1024  
-
-for folder in [UPLOAD_FOLDER, AUDIO_FOLDER, GENERATED_IMAGES_FOLDER]:
+     allow_headers=["Content-Type", "Authorization", "Cookie", "X-Requested-With"],
+     expose_headers=["Set-Cookie", "Content-Type"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+     max_age=3600,
+     send_wildcard=False,
+     always_send=True
+) in [UPLOAD_FOLDER, AUDIO_FOLDER, GENERATED_IMAGES_FOLDER]:
     if not os.path.exists(folder):
         os.makedirs(folder)
 
