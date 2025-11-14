@@ -1167,103 +1167,79 @@ Requirements:
 - The post must be engaging and encourage comments/shares.
 
 Generate ONLY the post content, nothing else."""
-
             try:
-                # Use gemini-1.5-pro-latest which is stable and available
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key={api_key}"
+                from groq import Groq
                 
-                headers = {'Content-Type': 'application/json'}
+                groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
                 
-                # Build payload
-                parts = [{"text": prompt}]
+                print(f"🚀 Generating content for {platform['name']} using Groq...")
                 
-                # Add image if available
-                if image_base64:
-                    parts.insert(0, {
-                        "inline_data": {
-                            "mime_type": "image/png",
-                            "data": image_base64
+                # Note: Groq doesn't support image analysis in free tier
+                # So we'll use text-only generation
+                
+                response = groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert social media content creator specializing in handcrafted artisan products. Create engaging, authentic posts that highlight craftsmanship and connect with audiences."
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
                         }
-                    })
-                    print(f"✅ Image added to {platform['name']} request")
+                    ],
+                    max_tokens=1024,
+                    temperature=0.7,
+                    top_p=1
+                )
                 
-                payload = {
-                    "contents": [{
-                        "parts": parts
-                    }],
-                    "generationConfig": {
-                        "temperature": 0.7,
-                        "maxOutputTokens": 2048,
-                    }
-                }
+                generated_text = response.choices[0].message.content
                 
-                print(f"🚀 Calling Gemini API for {platform['name']}...")
-                print(f"📡 URL: {url.split('?')[0]}")  # Don't print API key
-                
-                response = requests.post(url, headers=headers, json=payload, timeout=30)
-                
-                print(f"📡 Gemini Response Status: {response.status_code}")
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    print(f"✅ Response received for {platform['name']}")
-                    
-                    # Extract text from response
-                    if 'candidates' in result and len(result['candidates']) > 0:
-                        candidate = result['candidates'][0]
-                        if 'content' in candidate and 'parts' in candidate['content']:
-                            generated_text = candidate['content']['parts'][0].get('text', '')
-                            
-                            platform_content[platform_id] = {
-                                'platform': platform['name'],
-                                'content': generated_text.strip(),
-                                'char_limit': platform['char_limit'],
-                                'format_type': platform['best_for']
-                            }
-                            print(f"✅ Content generated for {platform['name']}")
-                        else:
-                            raise Exception("Invalid response structure - no content parts")
-                    else:
-                        raise Exception("Invalid response structure - no candidates")
-                else:
-                    error_text = response.text
-                    print(f"❌ Gemini API error: {error_text}")
-                    raise Exception(f"API error {response.status_code}: {error_text}")
-                    
-            except Exception as e:
-                error_msg = str(e)
-                print(f"❌ Error generating for {platform['name']}: {error_msg}")
-                traceback.print_exc()
                 platform_content[platform_id] = {
                     'platform': platform['name'],
-                    'content': f'Error generating content: {error_msg}',
+                    'content': generated_text.strip(),
                     'char_limit': platform['char_limit'],
-                    'format_type': platform['best_for'],
-                    'error': True
+                    'format_type': platform['best_for']
                 }
-        
+                print(f"✅ Content generated successfully for {platform['name']}")
+                
+            except Exception as e:
+                    error_msg = str(e)
+                    print(f"❌ Error generating for {platform['name']}: {error_msg}")
+                    traceback.print_exc()
+                    platform_content[platform_id] = {
+                        'platform': platform['name'],
+                        'content': f'Error generating content: {error_msg}',
+                        'char_limit': platform['char_limit'],
+                        'format_type': platform['best_for'],
+                        'error': True
+            }
+
         print("=" * 60)
         print("✅ CONTENT GENERATION COMPLETE")
         print(f"📊 Generated for {len(platform_content)} platforms")
         print("=" * 60)
-        
+
         return jsonify({
-            'success': True,
-            'platforms': selected_platforms,
-            'content': platform_content,
-            'model_used': 'gemini-1.5-pro-latest'
+                'success': True,
+                'platforms': selected_platforms,
+                'content': platform_content,
+                'model_used': 'llama-3.3-70b-versatile (Groq - FREE)'
         }), 200
-        
+
     except Exception as e:
-        print("=" * 60)
-        print("❌ FATAL ERROR IN GENERATE:")
-        print(traceback.format_exc())
-        print("=" * 60)
-        return jsonify({
-            'error': 'Internal server error',
-            'details': str(e),
-            'traceback': traceback.format_exc()
-        }), 500
+                print("=" * 60)
+                print("❌ FATAL ERROR IN GENERATE:")
+                print(traceback.format_exc())
+                print("=" * 60)
+                return jsonify({
+                    'error': 'Internal server error',
+                    'details': str(e),
+                    'traceback': traceback.format_exc()
+                }), 500
+
+            
 # ==================== ERROR HANDLERS ====================
 
 @app.errorhandler(404)
