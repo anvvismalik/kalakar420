@@ -72,6 +72,8 @@ const Studio: React.FC = () => {
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [isGeneratingImages, setIsGeneratingImages] = useState(false);
+    const [generatedImages, setGeneratedImages] = useState<any[]>([]);
 
     // --- Platform Selection State ---
     const [availablePlatforms, setAvailablePlatforms] = useState<Platform[]>([]);
@@ -319,20 +321,66 @@ const Studio: React.FC = () => {
         }
     };
 
-    const resetConversation = () => {
-        setSessionId(null);
-        setAiQuestion('');
-        setAiQuestionEn('Click "Start Conversation" to begin.');
-        setProgress(0);
-        setIsComplete(false);
-        setCollectedInfo(null);
-        setImageFile(null);
-        setImageUrl(null);
-        setGeneratedContent(null);
-        setSelectedPlatforms(['instagram', 'facebook']);
+    const generateProductImages = async () => {
+    if (!sessionId) {
+        setError("Please complete the conversation first");
+        return;
+    }
+    
+    try {
+        setIsGeneratingImages(true);
         setError('');
-    };
+        
+        console.log("Generating product images...");
+        
+        const response = await fetch(`${API_BASE_URL}/generate-images`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                session_id: sessionId,
+                num_images: 3  // Generate 3 variations
+            })
+        });
 
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Image generation failed');
+        }
+        
+        const imageData = await response.json();
+        console.log("Generated images:", imageData);
+        
+        if (imageData.success && imageData.generated_images) {
+            setGeneratedImages(imageData.generated_images);
+        } else {
+            throw new Error('No images were generated');
+        }
+        
+        setIsGeneratingImages(false);
+
+    } catch (err) {
+        console.error("Image Generation Error:", err);
+        setError(err instanceof Error ? err.message : "Failed to generate images");
+        setIsGeneratingImages(false);
+    }
+};
+
+    const resetConversation = () => {
+    setSessionId(null);
+    setAiQuestion('');
+    setAiQuestionEn('Click "Start Conversation" to begin.');
+    setProgress(0);
+    setIsComplete(false);
+    setCollectedInfo(null);
+    setImageFile(null);
+    setImageUrl(null);
+    setGeneratedContent(null);
+    setGeneratedImages([]);  // ✅ ADD THIS LINE
+    setSelectedPlatforms(['instagram', 'facebook']);
+    setError('');
+   };
+    
     return (
         <div className="min-h-screen kalakaar-bg-pattern">
             {/* Header */}
@@ -651,6 +699,97 @@ const Studio: React.FC = () => {
                         </CardContent>
                     </Card>
                 )}
+                {/* Image Generation Section */}
+{isComplete && !generatedImages.length && (
+    <Card className="border-2 shadow-lg border-accent/20">
+        <CardHeader className="bg-accent/5">
+            <CardTitle className="flex items-center gap-2 text-2xl">
+                <ImageIcon className="w-6 h-6 text-accent" />
+                <span className="bg-gradient-to-r from-accent to-primary bg-clip-text text-transparent">
+                    Generate Product Images
+                </span>
+            </CardTitle>
+            <CardDescription>
+                Create AI-generated visual mockups of your product
+            </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+            <div className="bg-accent/5 p-6 rounded-lg text-center">
+                <ImageIcon className="w-16 h-16 text-accent mx-auto mb-4 opacity-50" />
+                <p className="text-muted-foreground mb-4">
+                    Generate professional product images using AI based on your product description
+                </p>
+                
+                <Button 
+                    className="bg-gradient-to-r from-accent to-secondary text-white hover:opacity-90 shadow-md shadow-accent/20 h-12 px-8"
+                    onClick={generateProductImages}
+                    disabled={isGeneratingImages}
+                >
+                    {isGeneratingImages ? (
+                        <>
+                            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                            Generating Images...
+                        </>
+                    ) : (
+                        <>
+                            <Sparkles className="w-5 h-5 mr-2" />
+                            Generate 3 Product Images
+                        </>
+                    )}
+                </Button>
+            </div>
+        </CardContent>
+    </Card>
+)}
+
+{/* Generated Images Display */}
+{generatedImages.length > 0 && (
+    <Card className="border-2 shadow-lg">
+        <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-2xl">
+                <CheckCircle className="w-6 h-6 text-accent" />
+                <span className="bg-gradient-to-r from-accent to-secondary bg-clip-text text-transparent">
+                    Generated Product Images
+                </span>
+            </CardTitle>
+            <CardDescription>
+                {generatedImages.length} AI-generated variations created
+            </CardDescription>
+        </CardHeader>
+        <CardContent>
+            <div className="grid md:grid-cols-3 gap-6">
+                {generatedImages.map((img, index) => (
+                    <div key={index} className="border-2 border-accent/20 rounded-lg overflow-hidden hover:border-accent/50 transition-colors">
+                        <div className="relative aspect-square">
+                            <img 
+                                src={img.url} 
+                                alt={`Generated variation ${index + 1}`}
+                                className="w-full h-full object-cover"
+                            />
+                            <div className="absolute top-2 right-2 bg-accent text-white px-3 py-1 rounded-full text-xs font-medium">
+                                Variation {img.variation}
+                            </div>
+                        </div>
+                        <div className="p-4 bg-card/50">
+                            <p className="text-xs text-muted-foreground mb-3">
+                                {img.prompt?.substring(0, 80)}...
+                            </p>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full border-accent text-accent hover:bg-accent/10"
+                                onClick={() => window.open(img.url, '_blank')}
+                            >
+                                <Upload className="w-4 h-4 mr-2" />
+                                Download Image
+                            </Button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </CardContent>
+    </Card>
+)}
 
                 {/* Debug Info (Remove in production) */}
                 {process.env.NODE_ENV === 'development' && (
