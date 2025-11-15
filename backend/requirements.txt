@@ -19,8 +19,6 @@ google-auth==2.36.0
 google-auth-oauthlib==1.2.1
 google-api-python-client==2.154.0
 
-# Image Processing - Python 3.13 compatible
-Pillow==11.0.0
 
 # Utilities
 python-dotenv==1.0.1
@@ -33,3 +31,6 @@ soundfile==0.12.1
 
 groq==0.4.2
 httpx==0.24.1
+
+Pillow==10.1.0
+rembg==2.0.50

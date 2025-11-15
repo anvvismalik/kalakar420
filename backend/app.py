@@ -12,23 +12,13 @@ import time
 from datetime import datetime
 import json
 import traceback
-from PIL import Image 
+from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
 import base64
 from sqlalchemy.engine.url import make_url
 # --- GOOGLE CLOUD IMPORTS ---
 from google.cloud import speech
 from google.cloud import texttospeech
 from google.oauth2 import service_account
-
-# Optional: Imagen API (requires google-cloud-aiplatform)
-try:
-    from google.cloud import aiplatform
-    from vertexai.preview.vision_models import ImageGenerationModel
-    IMAGEN_AVAILABLE = True
-except ImportError:
-    print("⚠ google-cloud-aiplatform not installed. Image generation will be disabled.")
-    print("  Install with: pip install google-cloud-aiplatform")
-    IMAGEN_AVAILABLE = False
 
 # Load environment variables
 load_dotenv(find_dotenv())
@@ -80,52 +70,28 @@ else:
 # Translation API Key
 TRANSLATION_API_KEY = os.getenv("TRANSLATION_API_KEY")
 
-# Google Cloud Project Configuration
-project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID")
-location = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
-parent = f"projects/{project_id}/locations/{location}"
-
-# Initialize Vertex AI for Imagen
-if IMAGEN_AVAILABLE and credentials:
-    try:
-        if project_id:
-            aiplatform.init(project=project_id, location=location, credentials=credentials)
-            print("✓ Vertex AI initialized for Imagen")
-        else:
-            print("⚠ GOOGLE_CLOUD_PROJECT_ID not set")
-            IMAGEN_AVAILABLE = False
-    except Exception as e:
-        print(f"⚠ Vertex AI initialization warning: {e}")
-        IMAGEN_AVAILABLE = False
-else:
-    print("⚠ Imagen API disabled")
+# Remove.bg API Key (Optional - for better background removal)
+REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY")
 
 app = Flask(__name__)
 
-# Database and Secret Key Configuration
 # Database and Secret Key Configuration
 raw_database_url = os.environ.get('DATABASE_URL')
 
 # Convert to use psycopg driver explicitly
 if raw_database_url:
-    # Parse and rebuild the URL with explicit psycopg driver
     url_obj = make_url(raw_database_url)
-    
-    # Explicitly set the driver to psycopg
     url_obj = url_obj.set(drivername="postgresql+psycopg")
-    
     database_url = str(url_obj)
     print(f"✓ Database configured with psycopg driver: {url_obj.drivername}")
 else:
     database_url = None
     print("⚠ No database URL found, using SQLite")
 
-# Use PostgreSQL in production, SQLite for local development
-# Use PostgreSQL in production, SQLite for local development
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///db.sqlite'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Engine options for connection pooling (simplified for SQLite)
+# Engine options for connection pooling
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
@@ -136,25 +102,28 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'a_super_secret_key_c
 print(f"✓ Database: {'PostgreSQL (Production)' if database_url else 'SQLite (Development)'}")
 
 # Session configuration
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Required for cross-domain
-app.config['SESSION_COOKIE_SECURE'] = True       # Required when SameSite=None
-app.config['SESSION_COOKIE_HTTPONLY'] = True     # Security best practice
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_PATH'] = '/'
-app.config['SESSION_COOKIE_DOMAIN'] = None       # Let browser handle it
+app.config['SESSION_COOKIE_DOMAIN'] = None
 app.config['SESSION_COOKIE_NAME'] = 'kalakar_session'
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400
-
-# Configure CORS
-
 
 # File Upload Configuration
 UPLOAD_FOLDER = 'uploads'
 AUDIO_FOLDER = 'audio_responses'
 GENERATED_IMAGES_FOLDER = 'generated_images'
+ENHANCED_IMAGES_FOLDER = 'enhanced_images'  # NEW: For enhanced product photos
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  
 
-# Find this section (around line 170):
+# Create all necessary folders
+for folder in [UPLOAD_FOLDER, AUDIO_FOLDER, GENERATED_IMAGES_FOLDER, ENHANCED_IMAGES_FOLDER]:
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+# Configure CORS
 CORS(app, 
      supports_credentials=True,
      origins=[
@@ -179,6 +148,7 @@ CORS(app,
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['AUDIO_FOLDER'] = AUDIO_FOLDER
 app.config['GENERATED_IMAGES_FOLDER'] = GENERATED_IMAGES_FOLDER
+app.config['ENHANCED_IMAGES_FOLDER'] = ENHANCED_IMAGES_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
 # Configure Google Gemini API
@@ -229,7 +199,8 @@ class Content(db.Model):
     image_url = db.Column(db.String(255))
     generated_description = db.Column(db.Text)
     generated_captions = db.Column(db.Text)
-    generated_images = db.Column(db.Text)  # Store AI generated image URLs
+    generated_images = db.Column(db.Text)
+    enhanced_images = db.Column(db.Text)  # NEW: For enhanced product photos
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -242,6 +213,7 @@ class Content(db.Model):
             'generated_description': self.generated_description,
             'generated_captions': self.generated_captions,
             'generated_images': json.loads(self.generated_images) if self.generated_images else None,
+            'enhanced_images': json.loads(self.enhanced_images) if self.enhanced_images else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
@@ -274,14 +246,9 @@ def init_database():
     """Initialize database tables - creates all tables on startup"""
     with app.app_context():
         try:
-            # Import all models to ensure they're registered
             from sqlalchemy import inspect
-            
-            # Check if tables exist
             inspector = inspect(db.engine)
             existing_tables = inspector.get_table_names()
-            
-            # Create all tables
             db.create_all()
             
             print("=" * 60)
@@ -294,10 +261,8 @@ def init_database():
             
         except Exception as e:
             print(f"⚠ Database initialization error: {e}")
-            import traceback
             traceback.print_exc()
 
-# IMPORTANT: Call this right after defining it
 init_database()
 
 
@@ -472,125 +437,205 @@ def text_to_speech_punjabi(text, output_filename):
         return None
 
 
-# ==================== IMAGE GENERATION WITH GOOGLE IMAGEN ====================
+# ==================== IMAGE ENHANCEMENT FUNCTIONS ====================
 
-def generate_images_with_imagen(product_info, reference_image_path=None, num_images=3):
+def remove_background_rembg(image_path):
     """
-    HELPER FUNCTION - Generate product images using Google's Imagen API (Vertex AI)
+    Remove background using rembg (free, local processing)
+    Install: pip install rembg
     """
-    if not IMAGEN_AVAILABLE:
-        print("[IMAGEN] Service not available")
-        return None
-        
     try:
-        print(f"[IMAGEN] Starting generation of {num_images} images...")
+        from rembg import remove
         
-        # Build detailed prompt from product info
-        craft_type = product_info.get('craft_type', {})
-        product_name = product_info.get('product_name', {})
-        materials = product_info.get('materials', {})
-        special_features = product_info.get('special_features', {})
+        print(f"[REMBG] Removing background from {image_path}")
         
-        # Handle both dict and string formats
-        craft_type_text = craft_type.get('english', craft_type) if isinstance(craft_type, dict) else str(craft_type)
-        product_name_text = product_name.get('english', product_name) if isinstance(product_name, dict) else str(product_name)
-        materials_text = materials.get('english', materials) if isinstance(materials, dict) else str(materials)
-        special_text = special_features.get('english', special_features) if isinstance(special_features, dict) else str(special_features)
+        with open(image_path, 'rb') as input_file:
+            input_data = input_file.read()
         
-        # Fallback values
-        if not craft_type_text or craft_type_text == 'None':
-            craft_type_text = 'handcrafted product'
-        if not product_name_text or product_name_text == 'None':
-            product_name_text = 'artisan product'
+        output_data = remove(input_data)
         
-        # Create base prompt for professional product photography
-        base_prompt = f"""Professional e-commerce product photography of {product_name_text}, a {craft_type_text}.
-Made with {materials_text}. {special_text}.
-High quality, studio lighting, clean white background, sharp focus, detailed craftsmanship visible.
-Professional marketplace photography, artisanal aesthetic, premium quality, 4K resolution."""
+        # Convert to PIL Image
+        output_image = Image.open(io.BytesIO(output_data))
+        print(f"[REMBG] ✓ Background removed successfully")
         
-        # Different angles/styles for variations
-        prompt_variations = [
-            f"{base_prompt} Close-up detail shot showing intricate craftsmanship and texture.",
-            f"{base_prompt} Full product view centered on white background, commercial photography.",
-            f"{base_prompt} Angled view with soft natural lighting showing product dimensions."
-        ]
+        return output_image
+    except ImportError:
+        print("[REMBG] ⚠ rembg not installed. Install with: pip install rembg")
+        return None
+    except Exception as e:
+        print(f"[REMBG] Error: {str(e)}")
+        traceback.print_exc()
+        return None
+
+
+def remove_background_removebg(image_path):
+    """
+    Remove background using remove.bg API (50 free images/month)
+    Get API key from: https://remove.bg/api
+    """
+    if not REMOVEBG_API_KEY:
+        print("[REMOVEBG] API key not configured")
+        return None
+    
+    try:
+        print(f"[REMOVEBG] Removing background from {image_path}")
         
-        generated_images = []
+        with open(image_path, 'rb') as image_file:
+            response = requests.post(
+                'https://api.remove.bg/v1.0/removebg',
+                files={'image_file': image_file},
+                data={'size': 'auto'},
+                headers={'X-Api-Key': REMOVEBG_API_KEY},
+                timeout=30
+            )
         
-        # Initialize Imagen model
-        try:
-            model = ImageGenerationModel.from_pretrained("imagegeneration@006")
-            print("[IMAGEN] Using imagegeneration@006 model")
-        except Exception as model_error:
-            try:
-                model = ImageGenerationModel.from_pretrained("imagegeneration@005")
-                print("[IMAGEN] Using imagegeneration@005 model (fallback)")
-            except Exception as fallback_error:
-                print(f"[IMAGEN] Model initialization failed: {fallback_error}")
-                return None
-        
-        for idx, prompt in enumerate(prompt_variations[:num_images]):
-            try:
-                print(f"[IMAGEN] Generating image {idx + 1}/{num_images}...")
-                
-                # Text-to-image generation
-                response = model.generate_images(
-                    prompt=prompt,
-                    number_of_images=1,
-                    aspect_ratio="1:1",
-                    add_watermark=False,
-                )
-                
-                # Handle ImageGenerationResponse object
-                if response and hasattr(response, 'images'):
-                    images_list = response.images
-                    
-                    if images_list and len(images_list) > 0:
-                        timestamp = int(time.time())
-                        filename = f"generated_{timestamp}_{idx}.png"
-                        filepath = os.path.join(app.config['GENERATED_IMAGES_FOLDER'], filename)
-                        
-                        # Save the first image
-                        images_list[0].save(filepath)
-                        
-                        if os.path.exists(filepath):
-                            file_size = os.path.getsize(filepath)
-                            print(f"[IMAGEN] ✓ Saved image: {filename} ({file_size} bytes)")
-                            
-                            base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
-                            image_url = f'{base_url}/generated_images/{filename}'
-                            
-                            generated_images.append({
-                                'url': image_url,
-                                'filename': filename,
-                                'variation': idx + 1,
-                                'prompt': prompt[:100] + '...',
-                                'size': file_size
-                            })
-                
-                if idx < num_images - 1:
-                    time.sleep(2)
-                
-            except Exception as img_error:
-                error_msg = str(img_error)
-                print(f"[IMAGEN] Error generating image {idx + 1}: {error_msg}")
-                
-                if "quota" in error_msg.lower() or "rate" in error_msg.lower():
-                    print("[IMAGEN] Rate limit hit, stopping generation")
-                    break
-                else:
-                    continue
-        
-        if generated_images:
-            print(f"[IMAGEN] Successfully generated {len(generated_images)} images")
-            return generated_images
+        if response.status_code == 200:
+            output_image = Image.open(io.BytesIO(response.content))
+            print(f"[REMOVEBG] ✓ Background removed successfully")
+            return output_image
         else:
-            print("[IMAGEN] No images were generated")
+            print(f"[REMOVEBG] Error: {response.status_code} - {response.text}")
             return None
             
     except Exception as e:
-        print(f"[IMAGEN] Fatal error: {str(e)}")
+        print(f"[REMOVEBG] Error: {str(e)}")
+        traceback.print_exc()
+        return None
+
+
+def create_professional_background(product_img, bg_type="white"):
+    """
+    Create professional product photo with clean background
+    bg_type: "white", "light_gray", "gradient"
+    """
+    try:
+        # Ensure product image has transparency
+        if product_img.mode != 'RGBA':
+            product_img = product_img.convert('RGBA')
+        
+        # Get product dimensions
+        width, height = product_img.size
+        
+        # Create canvas (slightly larger for padding)
+        canvas_size = max(width, height) + 200
+        canvas = Image.new('RGBA', (canvas_size, canvas_size), (255, 255, 255, 255))
+        
+        # Create background based on type
+        if bg_type == "white":
+            bg_color = (255, 255, 255, 255)
+        elif bg_type == "light_gray":
+            bg_color = (245, 245, 245, 255)
+        elif bg_type == "gradient":
+            # Create gradient background
+            bg = Image.new('RGBA', (canvas_size, canvas_size), (255, 255, 255, 255))
+            draw = ImageDraw.Draw(bg)
+            for i in range(canvas_size):
+                shade = 255 - int((i / canvas_size) * 20)  # Subtle gradient
+                draw.line([(0, i), (canvas_size, i)], fill=(shade, shade, shade, 255))
+            canvas = bg
+        else:
+            bg_color = (255, 255, 255, 255)
+        
+        if bg_type != "gradient":
+            canvas.paste(bg_color, (0, 0, canvas_size, canvas_size))
+        
+        # Center the product
+        x_offset = (canvas_size - width) // 2
+        y_offset = (canvas_size - height) // 2
+        
+        # Add subtle shadow
+        shadow = Image.new('RGBA', product_img.size, (0, 0, 0, 0))
+        shadow.paste((0, 0, 0, 30), product_img.split()[3])  # Use alpha as mask
+        shadow = shadow.filter(ImageFilter.GaussianBlur(radius=10))
+        canvas.paste(shadow, (x_offset + 5, y_offset + 10), shadow)
+        
+        # Paste product
+        canvas.paste(product_img, (x_offset, y_offset), product_img)
+        
+        # Enhance image quality
+        enhancer = ImageEnhance.Sharpness(canvas)
+        canvas = enhancer.enhance(1.2)
+        
+        enhancer = ImageEnhance.Contrast(canvas)
+        canvas = enhancer.enhance(1.1)
+        
+        return canvas.convert('RGB')
+        
+    except Exception as e:
+        print(f"[BG_CREATE] Error: {str(e)}")
+        traceback.print_exc()
+        return None
+
+
+def enhance_product_image(image_path, num_variations=3):
+    """
+    Main function to enhance product images
+    Creates 3 professional variations with different backgrounds
+    """
+    try:
+        print(f"[ENHANCE] Starting enhancement of {image_path}")
+        
+        # Step 1: Remove background (try rembg first, then remove.bg)
+        product_no_bg = remove_background_rembg(image_path)
+        
+        if not product_no_bg:
+            product_no_bg = remove_background_removebg(image_path)
+        
+        if not product_no_bg:
+            print("[ENHANCE] ⚠ Background removal failed, using original image")
+            product_no_bg = Image.open(image_path).convert('RGBA')
+        
+        # Step 2: Create 3 variations with different backgrounds
+        background_styles = [
+            ("white", "Pure White Background"),
+            ("light_gray", "Light Gray Background"),
+            ("gradient", "Subtle Gradient Background")
+        ]
+        
+        enhanced_images = []
+        base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
+        
+        for idx, (bg_type, description) in enumerate(background_styles[:num_variations]):
+            try:
+                print(f"[ENHANCE] Creating variation {idx + 1}: {description}")
+                
+                # Create professional background
+                enhanced_img = create_professional_background(product_no_bg, bg_type)
+                
+                if enhanced_img:
+                    # Save the enhanced image
+                    timestamp = int(time.time())
+                    filename = f"enhanced_{timestamp}_{idx}.jpg"
+                    filepath = os.path.join(app.config['ENHANCED_IMAGES_FOLDER'], filename)
+                    
+                    enhanced_img.save(filepath, 'JPEG', quality=95, optimize=True)
+                    
+                    if os.path.exists(filepath):
+                        file_size = os.path.getsize(filepath)
+                        print(f"[ENHANCE] ✓ Saved: {filename} ({file_size} bytes)")
+                        
+                        image_url = f'{base_url}/enhanced_images/{filename}'
+                        
+                        enhanced_images.append({
+                            'url': image_url,
+                            'filename': filename,
+                            'variation': idx + 1,
+                            'description': description,
+                            'size': file_size
+                        })
+            except Exception as e:
+                print(f"[ENHANCE] Error creating variation {idx + 1}: {str(e)}")
+                continue
+        
+        if enhanced_images:
+            print(f"[ENHANCE] ✓ Successfully created {len(enhanced_images)} enhanced images")
+            return enhanced_images
+        else:
+            print("[ENHANCE] ⚠ No enhanced images were created")
+            return None
+            
+    except Exception as e:
+        print(f"[ENHANCE] Fatal error: {str(e)}")
         traceback.print_exc()
         return None
 
@@ -602,7 +647,13 @@ def home():
     return jsonify({
         'status': 'online',
         'service': 'Kalakar AI Backend',
-        'version': '1.0.0'
+        'version': '1.0.1',
+        'features': {
+            'speech_to_text': speech_client is not None,
+            'text_to_speech': tts_client is not None,
+            'image_enhancement': True,
+            'content_generation': True
+        }
     }), 200
 
 
@@ -616,13 +667,11 @@ def health_check():
             'text_to_speech': 'active' if tts_client else 'inactive',
             'translation': 'active' if TRANSLATION_API_KEY else 'inactive',
             'gemini_content': 'active',
-            'imagen_generation': 'active' if (IMAGEN_AVAILABLE and project_id) else 'not_configured',
+            'image_enhancement': 'active',
             'database': 'postgresql' if database_url else 'sqlite'
         }
     }), 200
 
-
-# ==================== PLATFORMS ENDPOINT ====================
 
 @app.route('/api/platforms', methods=['GET'])
 def get_platforms():
@@ -720,7 +769,6 @@ def start_conversation():
             'question': first_question['question_pa'],
             'question_en': first_question['question_en'],
             'step': 'greeting',
-            # FIX 1: Corrected absolute URL construction with missing slash
             'audio_url': f'{request.host_url.rstrip("/")}/audio/{audio_filename}' if audio_file else None,
             'progress': 0
         }), 200
@@ -809,7 +857,6 @@ def respond_to_conversation():
             'next_question': next_step['question_pa'],
             'next_question_en': next_step['question_en'],
             'step': next_step['step'],
-            # FIX 1: Corrected absolute URL construction with missing slash
             'audio_url': f'{request.host_url.rstrip("/")}/audio/{audio_filename}' if audio_file else None,
             'progress': progress
         }), 200
@@ -818,106 +865,54 @@ def respond_to_conversation():
         return jsonify({'error': str(e)}), 500
 
 
-# ==================== IMAGE GENERATION ENDPOINT ====================
+# ==================== IMAGE ENHANCEMENT ENDPOINT ====================
 
-@app.route('/api/generate-images', methods=['POST'])
-def generate_product_images():
+@app.route('/api/enhance-image', methods=['POST'])
+def enhance_image_endpoint():
     """
-    ROUTE ENDPOINT - Generate professional product images using Google Imagen
+    NEW ENDPOINT - Enhance uploaded product image
+    Removes background and creates 3 professional variations
     """
     try:
-        if not IMAGEN_AVAILABLE:
-            return jsonify({
-                'error': 'Image generation not available',
-                'details': 'Please install: pip install google-cloud-aiplatform',
-                'success': False
-            }), 503
-        
-        if not project_id:
-            return jsonify({
-                'error': 'Google Cloud not configured',
-                'details': 'Set GOOGLE_CLOUD_PROJECT_ID in environment variables',
-                'success': False
-            }), 503
+        print("=" * 60)
+        print("🎨 IMAGE ENHANCEMENT REQUEST RECEIVED")
+        print("=" * 60)
         
         user = get_current_user()
         if not user:
             return jsonify({'error': 'Not authenticated', 'success': False}), 401
         
-        # Get request data
-        if request.is_json:
-            data = request.get_json()
-        else:
-            data = request.form.to_dict()
+        # Get image from request
+        if 'image' not in request.files:
+            return jsonify({'error': 'No image provided', 'success': False}), 400
         
-        session_id = data.get('session_id')
-        num_images = int(data.get('num_images', 3))
+        image_file = request.files['image']
+        if not image_file or not image_file.filename:
+            return jsonify({'error': 'Invalid image file', 'success': False}), 400
         
-        if not session_id:
-            return jsonify({'error': 'session_id required', 'success': False}), 400
+        if not allowed_file(image_file.filename):
+            return jsonify({'error': 'Invalid file type', 'success': False}), 400
         
-        if num_images < 1 or num_images > 3:
-            return jsonify({'error': 'num_images must be between 1 and 3', 'success': False}), 400
+        # Save original image temporarily
+        timestamp = int(time.time())
+        original_filename = f"original_{timestamp}_{secure_filename(image_file.filename)}"
+        original_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
+        image_file.save(original_path)
         
-        # Get conversation data
-        conversation = Conversation.query.filter_by(
-            session_id=session_id,
-            user_id=user.id
-        ).first()
+        print(f"✅ Original image saved: {original_path}")
         
-        if not conversation:
-            return jsonify({'error': 'Conversation not found', 'success': False}), 404
+        # Get optional parameters
+        num_variations = int(request.form.get('num_variations', 3))
+        if num_variations < 1 or num_variations > 3:
+            num_variations = 3
         
-        if not conversation.is_complete:
+        # Enhance the image
+        enhanced_images = enhance_product_image(original_path, num_variations)
+        
+        if not enhanced_images:
             return jsonify({
-                'error': 'Conversation must be completed first',
-                'success': False,
-                'current_step': conversation.current_step
-            }), 400
-        
-        # Parse collected info
-        try:
-            collected_info = json.loads(conversation.collected_info)
-        except json.JSONDecodeError as e:
-            return jsonify({
-                'error': 'Invalid conversation data',
-                'details': str(e),
-                'success': False
-            }), 500
-        
-        # Validate required fields
-        required_fields = ['craft_type', 'product_name']
-        missing_fields = [f for f in required_fields if f not in collected_info]
-        
-        if missing_fields:
-            return jsonify({
-                'error': 'Incomplete product information',
-                'missing_fields': missing_fields,
-                'success': False
-            }), 400
-        
-        # Get reference image if provided
-        reference_image_path = None
-        
-        if 'reference_image' in request.files:
-            file = request.files['reference_image']
-            if file and file.filename and allowed_file(file.filename):
-                timestamp = int(time.time())
-                filename = f"ref_{timestamp}_{secure_filename(file.filename)}"
-                reference_image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(reference_image_path)
-        
-        # Call the helper function
-        generated_images = generate_images_with_imagen(
-            collected_info,
-            reference_image_path,
-            num_images
-        )
-        
-        if not generated_images:
-            return jsonify({
-                'error': 'Image generation failed',
-                'details': 'No images were generated. Check server logs for details.',
+                'error': 'Image enhancement failed',
+                'details': 'Could not create enhanced versions. Check server logs.',
                 'success': False
             }), 500
         
@@ -926,42 +921,38 @@ def generate_product_images():
             content = Content.query.filter_by(user_id=user.id).order_by(Content.created_at.desc()).first()
             
             if content:
-                content.generated_images = json.dumps(generated_images)
+                content.enhanced_images = json.dumps(enhanced_images)
                 db.session.commit()
             else:
-                product_details = []
-                for key, value in collected_info.items():
-                    if isinstance(value, dict) and 'english' in value:
-                        product_details.append(f"{key}: {value['english']}")
-                    else:
-                        product_details.append(f"{key}: {value}")
-                
-                product_text = "\n".join(product_details)
-                
                 content = Content(
                     user_id=user.id,
-                    english_text=product_text,
-                    generated_images=json.dumps(generated_images)
+                    image_url=f'{request.host_url.rstrip("/")}/uploads/{original_filename}',
+                    enhanced_images=json.dumps(enhanced_images)
                 )
                 db.session.add(content)
                 db.session.commit()
                 
         except Exception as db_error:
-            print(f"[IMAGE_GEN] DB error: {db_error}")
+            print(f"[ENHANCE] DB error: {db_error}")
             traceback.print_exc()
             db.session.rollback()
         
+        print("=" * 60)
+        print("✅ IMAGE ENHANCEMENT COMPLETE")
+        print(f"📊 Created {len(enhanced_images)} enhanced versions")
+        print("=" * 60)
+        
         return jsonify({
             'success': True,
-            'generated_images': generated_images,
-            'count': len(generated_images),
-            'method': 'google_imagen',
-            'model': 'imagegeneration@006',
-            'message': f'Successfully generated {len(generated_images)} product images'
+            'enhanced_images': enhanced_images,
+            'count': len(enhanced_images),
+            'original_url': f'{request.host_url.rstrip("/")}/uploads/{original_filename}',
+            'method': 'rembg + PIL',
+            'message': f'Successfully created {len(enhanced_images)} professional product photos'
         }), 200
         
     except Exception as e:
-        print(f"[IMAGE_GEN] Unexpected error: {e}")
+        print(f"[ENHANCE] Unexpected error: {e}")
         traceback.print_exc()
         return jsonify({
             'error': 'Internal server error',
@@ -981,7 +972,7 @@ def upload_image():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
+        base_url = os.getenv('BASE_URL', request.host_url.rstrip('/'))
         image_url = f'{base_url}/uploads/{filename}'
         
         return jsonify({'message': 'Image uploaded!', 'image_url': image_url}), 200
@@ -991,21 +982,50 @@ def upload_image():
 
 @app.route('/uploads/<filename>')
 def serve_image(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    response = send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+    response.headers['Cache-Control'] = 'public, max-age=31536000'
+    return response
 
 
 @app.route('/generated_images/<filename>')
 def serve_generated_image(filename):
     """Serve AI generated images"""
     try:
-        return send_from_directory(app.config['GENERATED_IMAGES_FOLDER'], filename)
+        response = send_from_directory(app.config['GENERATED_IMAGES_FOLDER'], filename)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+        response.headers['Cache-Control'] = 'public, max-age=31536000'
+        return response
     except FileNotFoundError:
         return jsonify({'error': 'Image not found'}), 404
 
 
+@app.route('/enhanced_images/<filename>')
+def serve_enhanced_image(filename):
+    """NEW: Serve enhanced product images"""
+    try:
+        response = send_from_directory(app.config['ENHANCED_IMAGES_FOLDER'], filename)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+        response.headers['Cache-Control'] = 'public, max-age=31536000'
+        return response
+    except FileNotFoundError:
+        return jsonify({'error': 'Enhanced image not found'}), 404
+
+
 @app.route('/audio/<filename>')
 def serve_audio(filename):
-    return send_from_directory(app.config['AUDIO_FOLDER'], filename, mimetype='audio/mpeg')
+    try:
+        response = send_from_directory(app.config['AUDIO_FOLDER'], filename, mimetype='audio/mpeg')
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+        response.headers['Accept-Ranges'] = 'bytes'
+        return response
+    except FileNotFoundError:
+        return jsonify({'error': 'Audio file not found'}), 404
 
 
 @app.route('/api/conversation/generate', methods=['POST'])
@@ -1098,62 +1118,27 @@ def generate_from_conversation():
         product_text = "\n".join(product_details_list)
         print(f"📄 Product Text:\n{product_text}")
         
-        # Load image if provided
-        image_part = None
-        image_base64 = None
-        if image_url:
-            try:
-                print(f"🖼️ Loading image from: {image_url}")
-                image_filename = os.path.basename(image_url)
-                image_filepath = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
-                
-                if os.path.exists(image_filepath):
-                    print(f"✅ Image found locally: {image_filepath}")
-                    image_part = Image.open(image_filepath)
-                    
-                    # Convert to base64 for API
-                    buffered = io.BytesIO()
-                    image_part.save(buffered, format="PNG")
-                    image_base64 = base64.b64encode(buffered.getvalue()).decode()
-                else:
-                    print(f"⚠️ Image not found locally, fetching from URL")
-                    image_response = requests.get(image_url, stream=True, timeout=10)
-                    if image_response.status_code == 200:
-                        image_part = Image.open(io.BytesIO(image_response.content))
-                        
-                        # Convert to base64 for API
-                        buffered = io.BytesIO()
-                        image_part.save(buffered, format="PNG")
-                        image_base64 = base64.b64encode(buffered.getvalue()).decode()
-                        print("✅ Image loaded from URL")
-                    else:
-                        print(f"❌ Failed to fetch image: {image_response.status_code}")
-            except Exception as e:
-                print(f"⚠️ Error loading image: {str(e)}")
-                traceback.print_exc()
-                # Continue without image
-        
         platform_content = {}
         
         print(f"🎨 Generating content for {len(selected_platforms)} platforms...")
         
-        # Get API key
-        api_key = os.environ.get('GEMINI_API_KEY')
-        if not api_key:
-            return jsonify({'error': 'GEMINI_API_KEY not configured'}), 500
-        
-        for platform_id in selected_platforms:
-            platform = next((p for p in PLATFORMS if p['id'] == platform_id), None)
-            if not platform:
-                print(f"⚠️ Platform not found: {platform_id}")
-                continue
+        # Use Groq for free content generation
+        try:
+            from groq import Groq
             
-            print(f"📝 Generating for {platform['name']}...")
+            groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
             
-            prompt = f"""You are an expert content creator helping an artisan (Kalakaar) generate engaging social media posts.
+            for platform_id in selected_platforms:
+                platform = next((p for p in PLATFORMS if p['id'] == platform_id), None)
+                if not platform:
+                    print(f"⚠️ Platform not found: {platform_id}")
+                    continue
+                
+                print(f"📝 Generating for {platform['name']}...")
+                
+                prompt = f"""You are an expert content creator helping an artisan (Kalakaar) generate engaging social media posts.
 
 Create a compelling and authentic {platform['name']} post for the following handcrafted product.
-Analyze the visual details from the image (if provided) and weave them with the textual details below.
 
 --- PRODUCT DETAILS ---
 {product_text}
@@ -1167,44 +1152,36 @@ Requirements:
 - The post must be engaging and encourage comments/shares.
 
 Generate ONLY the post content, nothing else."""
-            try:
-                from groq import Groq
                 
-                groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
-                
-                print(f"🚀 Generating content for {platform['name']} using Groq...")
-                
-                # Note: Groq doesn't support image analysis in free tier
-                # So we'll use text-only generation
-                
-                response = groq_client.chat.completions.create(
-                    model="llama-3.3-70b-versatile",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are an expert social media content creator specializing in handcrafted artisan products. Create engaging, authentic posts that highlight craftsmanship and connect with audiences."
-                        },
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
-                    max_tokens=1024,
-                    temperature=0.7,
-                    top_p=1
-                )
-                
-                generated_text = response.choices[0].message.content
-                
-                platform_content[platform_id] = {
-                    'platform': platform['name'],
-                    'content': generated_text.strip(),
-                    'char_limit': platform['char_limit'],
-                    'format_type': platform['best_for']
-                }
-                print(f"✅ Content generated successfully for {platform['name']}")
-                
-            except Exception as e:
+                try:
+                    response = groq_client.chat.completions.create(
+                        model="llama-3.3-70b-versatile",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "You are an expert social media content creator specializing in handcrafted artisan products. Create engaging, authentic posts that highlight craftsmanship and connect with audiences."
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ],
+                        max_tokens=1024,
+                        temperature=0.7,
+                        top_p=1
+                    )
+                    
+                    generated_text = response.choices[0].message.content
+                    
+                    platform_content[platform_id] = {
+                        'platform': platform['name'],
+                        'content': generated_text.strip(),
+                        'char_limit': platform['char_limit'],
+                        'format_type': platform['best_for']
+                    }
+                    print(f"✅ Content generated successfully for {platform['name']}")
+                    
+                except Exception as e:
                     error_msg = str(e)
                     print(f"❌ Error generating for {platform['name']}: {error_msg}")
                     traceback.print_exc()
@@ -1214,7 +1191,11 @@ Generate ONLY the post content, nothing else."""
                         'char_limit': platform['char_limit'],
                         'format_type': platform['best_for'],
                         'error': True
-            }
+                    }
+        
+        except ImportError:
+            print("❌ Groq not installed. Install with: pip install groq")
+            return jsonify({'error': 'Content generation service not available'}), 503
 
         print("=" * 60)
         print("✅ CONTENT GENERATION COMPLETE")
@@ -1222,24 +1203,24 @@ Generate ONLY the post content, nothing else."""
         print("=" * 60)
 
         return jsonify({
-                'success': True,
-                'platforms': selected_platforms,
-                'content': platform_content,
-                'model_used': 'llama-3.3-70b-versatile (Groq - FREE)'
+            'success': True,
+            'platforms': selected_platforms,
+            'content': platform_content,
+            'model_used': 'llama-3.3-70b-versatile (Groq - FREE)'
         }), 200
 
     except Exception as e:
-                print("=" * 60)
-                print("❌ FATAL ERROR IN GENERATE:")
-                print(traceback.format_exc())
-                print("=" * 60)
-                return jsonify({
-                    'error': 'Internal server error',
-                    'details': str(e),
-                    'traceback': traceback.format_exc()
-                }), 500
+        print("=" * 60)
+        print("❌ FATAL ERROR IN GENERATE:")
+        print(traceback.format_exc())
+        print("=" * 60)
+        return jsonify({
+            'error': 'Internal server error',
+            'details': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
-            
+
 # ==================== ERROR HANDLERS ====================
 
 @app.errorhandler(404)
@@ -1261,12 +1242,27 @@ def internal_error(error):
 
 if __name__ == '__main__':
     print("=" * 50)
-    print("✓ Running in development mode")
+    print("✓ Kalakar AI Backend - Image Enhancement Edition")
     print("=" * 50)
     
     # Get port from environment variable
     port = int(os.environ.get('PORT', 5001))
     print(f"🚀 Server starting on port {port}")
+    
+    # Check for required dependencies
+    try:
+        from rembg import remove
+        print("✓ rembg installed - Background removal available")
+    except ImportError:
+        print("⚠ rembg not installed. Run: pip install rembg")
+    
+    try:
+        from groq import Groq
+        print("✓ groq installed - Content generation available")
+    except ImportError:
+        print("⚠ groq not installed. Run: pip install groq")
+    
+    print("=" * 50)
     
     # For development
     app.run(debug=True, host='0.0.0.0', port=port)
