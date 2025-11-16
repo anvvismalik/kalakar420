@@ -116,7 +116,7 @@ const Studio: React.FC = () => {
             return;
         }
 
-        // const fullUrl = `http://127.0.0.1:5001${relativeUrl}`; 
+        // The backend now sends the full URL.
         const fullUrl = relativeUrl;
         
         const handleEnd = () => {
@@ -299,7 +299,7 @@ const Studio: React.FC = () => {
                 body: JSON.stringify({ 
                     session_id: sessionId,
                     image_url: uploadData.image_url,
-                    platforms: selectedPlatforms  // THIS WAS MISSING!
+                    platforms: selectedPlatforms 
                 })
             });
 
@@ -333,13 +333,16 @@ const Studio: React.FC = () => {
         
         console.log("Enhancing product image...");
         
-        const response = await fetch(`${API_BASE_URL}/generate-images`, {
+        // FIX: CALL THE NEW ENDPOINT /api/enhance-image
+        const response = await fetch(`${API_BASE_URL}/enhance-image`, {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                image_url: imageUrl,  // Use the uploaded image
-                num_images: 3
+                image_url: imageUrl,
+                session_id: sessionId, // Include session ID for product context in the backend
+                create_variants: true, // Request 3 variants
+                num_variants: 3
             })
         });
 
@@ -351,6 +354,7 @@ const Studio: React.FC = () => {
         const imageData = await response.json();
         console.log("Enhanced images:", imageData);
         
+        // Use 'enhanced_images' from the response data structure
         if (imageData.success && imageData.enhanced_images) {
             setGeneratedImages(imageData.enhanced_images);
         } else {
@@ -767,12 +771,12 @@ const Studio: React.FC = () => {
                                 className="w-full h-full object-cover"
                             />
                             <div className="absolute top-2 right-2 bg-accent text-white px-3 py-1 rounded-full text-xs font-medium">
-                                Variation {img.variation}
+                                Variation {img.variant}
                             </div>
                         </div>
                         <div className="p-4 bg-card/50">
                             <p className="text-xs text-muted-foreground mb-3">
-                                {img.prompt?.substring(0, 80)}...
+                                {img.background_style}...
                             </p>
                             <Button
                                 variant="outline"
