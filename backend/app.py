@@ -411,8 +411,6 @@ def translate_to_english(punjabi_text):
         print("="*50)
         print(f"TRANSLATION API FAILED. Status: {response.status_code}")
         print(f"Response Content: {response.text}")
-        print("="*50)
-        
         return None
     except Exception as e:
         print(f"Translation error: {str(e)}")
@@ -505,7 +503,7 @@ def enhance_image_with_clipdrop(image_path, product_info=None):
         if product_info:
             craft_info = product_info.get('craft_type', {})
             if isinstance(craft_info, dict):
-                craft_type = craft_info.get('english', craft_type)
+                craft_type = craft_info.get('english', craft_info)
             else:
                 craft_type = str(craft_info)
         
@@ -598,7 +596,7 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
         if product_info:
             craft_info = product_info.get('craft_type', {})
             if isinstance(craft_info, dict):
-                craft_type = craft_info.get('english', craft_type)
+                craft_type = craft_info.get('english', craft_info)
             else:
                 craft_type = str(craft_info)
         
@@ -898,16 +896,39 @@ def respond_to_conversation():
         return jsonify({'error': str(e)}), 500
 
 
-# ==================== IMAGE ENHANCEMENT ENDPOINT (User's code) ====================
+# ==================== IMAGE ENHANCEMENT ENDPOINT (FIXED) ====================
 
 @app.route('/api/enhance-image', methods=['POST'])
 def enhance_product_image():
     """
     ROUTE ENDPOINT - Enhance product image using Clipdrop API
-    Removes unprofessional background and adds professional studio setting
+    Reads image URL from JSON body, downloads it, processes it.
     """
     try:
+        print("=" * 60)
+        print("🖼️ ENHANCE IMAGE REQUEST RECEIVED")
+        print("=" * 60)
+        
+        # FIX 2: Get JSON data instead of files
+        if not request.is_json:
+            print("❌ Request is not JSON")
+            return jsonify({'error': 'Request must be JSON'}), 400
+            
+        data = request.get_json()
+        image_url = data.get('image_url')
+        session_id = data.get('session_id')
+        create_variants = data.get('create_variants', False)
+        num_variants = data.get('num_variants', 3)
+        
+        print(f"📦 Data received: URL={image_url}, Session={session_id}")
+        
+        if not image_url:
+            print("❌ No image URL provided")
+            # FIX 3: Change error message to reflect expected input
+            return jsonify({'error': 'No image URL provided'}), 400
+        
         if not CLIPDROP_AVAILABLE:
+            print("❌ Clipdrop API not configured")
             return jsonify({
                 'error': 'Image enhancement not available',
                 'details': 'CLIPDROP_API_KEY not configured',
@@ -916,32 +937,27 @@ def enhance_product_image():
         
         user = get_current_user()
         if not user:
+            print("❌ User not authenticated")
             return jsonify({'error': 'Not authenticated', 'success': False}), 401
         
-        # Check if image file is provided
-        if 'image' not in request.files:
-            return jsonify({'error': 'No image file provided', 'success': False}), 400
         
-        file = request.files['image']
-        if file.filename == '':
-            return jsonify({'error': 'No selected file', 'success': False}), 400
+        # Step 1: Download the image from the provided URL
+        print(f"⬇️ Downloading image from: {image_url}")
+        image_response = requests.get(image_url, stream=True, timeout=30)
+        if image_response.status_code != 200:
+            print(f"❌ Failed to download image: {image_response.status_code}")
+            return jsonify({'error': f'Failed to download image from URL: {image_response.status_code}'}), 500
         
-        if not allowed_file(file.filename):
-            return jsonify({'error': 'Invalid file type', 'success': False}), 400
-        
-        # Get optional parameters
-        session_id = request.form.get('session_id')
-        create_variants = request.form.get('create_variants', 'false').lower() == 'true'
-        num_variants = int(request.form.get('num_variants', 3))
-        
-        # Save original image
+        # Save image locally for Clipdrop processing
         timestamp = int(time.time())
-        filename = f"{timestamp}_{secure_filename(file.filename)}"
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
+        original_filename = os.path.basename(image_url).split('?')[0] # Remove query params
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], f"clipdrop_temp_{timestamp}_{original_filename}")
         
-        print(f"[ENHANCE] Original image saved: {filepath}")
-        
+        with open(filepath, 'wb') as f:
+            for chunk in image_response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        print(f"✅ Image temporarily saved to: {filepath}")
+
         # Get product info if session_id provided
         product_info = None
         if session_id:
@@ -956,7 +972,7 @@ def enhance_product_image():
                 except:
                     pass
         
-        # Enhance the image
+        # Step 2: Enhance the image
         if create_variants:
             enhanced_images = create_multiple_background_variants(
                 filepath,
@@ -967,7 +983,12 @@ def enhance_product_image():
             single_result = enhance_image_with_clipdrop(filepath, product_info)
             enhanced_images = [single_result] if single_result else None
         
+        # Step 3: Clean up and respond
+        os.remove(filepath)
+        print(f"🧹 Cleaned up temporary file: {filepath}")
+
         if not enhanced_images:
+            print("❌ Image enhancement failed")
             return jsonify({
                 'error': 'Image enhancement failed',
                 'details': 'Could not process image. Check server logs.',
@@ -977,23 +998,32 @@ def enhance_product_image():
         # Save to database
         try:
             base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
-            original_url = f'{base_url}/uploads/{filename}'
             
-            content = Content(
-                user_id=user.id,
-                image_url=original_url,
-                enhanced_images=json.dumps(enhanced_images)
-            )
-            db.session.add(content)
-            db.session.commit()
+            # Find the existing Content row or create a new one to store the enhanced images
+            content = Content.query.filter_by(user_id=user.id).order_by(Content.created_at.desc()).first()
+            
+            if content:
+                content.enhanced_images = json.dumps(enhanced_images)
+                db.session.commit()
+            else:
+                 # This path is unlikely given the conversation flow, but included for robustness
+                content = Content(
+                    user_id=user.id,
+                    image_url=image_url,
+                    enhanced_images=json.dumps(enhanced_images)
+                )
+                db.session.add(content)
+                db.session.commit()
             
         except Exception as db_error:
             print(f"[ENHANCE] DB error: {db_error}")
             db.session.rollback()
         
+        print("✅ Enhancement successful. Responding to frontend.")
+        
         return jsonify({
             'success': True,
-            'original_image': original_url,
+            'original_image_url': image_url,
             'enhanced_images': enhanced_images,
             'count': len(enhanced_images),
             'method': 'clipdrop',
@@ -1138,34 +1168,20 @@ def generate_from_conversation():
         product_text = "\n".join(product_details_list)
         print(f"📄 Product Text:\n{product_text}")
         
-        # Load image if provided
+        # Load image if provided (Simplified logic for content generation)
         image_part = None
         if image_url:
             try:
                 print(f"🖼️ Loading image from: {image_url}")
-                image_filename = os.path.basename(image_url)
                 
-                # Check if it's an enhanced image
-                if 'enhanced_images' in image_url:
-                    image_filepath = os.path.join(app.config['ENHANCED_IMAGES_FOLDER'], image_filename)
+                image_response = requests.get(image_url, stream=True, timeout=10)
+                if image_response.status_code == 200:
+                    image_part = Image.open(io.BytesIO(image_response.content))
+                    print("✅ Image loaded from URL")
                 else:
-                    image_filepath = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
-                
-                if os.path.exists(image_filepath):
-                    print(f"✅ Image found locally: {image_filepath}")
-                    image_part = Image.open(image_filepath)
-                else:
-                    print(f"⚠️ Image not found locally, fetching from URL")
-                    image_response = requests.get(image_url, stream=True, timeout=10)
-                    if image_response.status_code == 200:
-                        image_part = Image.open(io.BytesIO(image_response.content))
-                        print("✅ Image loaded from URL")
-                    else:
-                        print(f"❌ Failed to fetch image: {image_response.status_code}")
+                    print(f"❌ Failed to fetch image: {image_response.status_code}")
             except Exception as e:
                 print(f"⚠️ Error loading image: {str(e)}")
-                traceback.print_exc()
-                # Continue without image
         
         platform_content = {}
         
@@ -1215,17 +1231,6 @@ Generate ONLY the post content, nothing else."""
                         "content": prompt
                     }
                 ]
-                
-                # Attach image if available
-                if image_part:
-                    buffered = io.BytesIO()
-                    image_part.save(buffered, format="PNG")
-                    image_base64 = base64.b64encode(buffered.getvalue()).decode()
-                    
-                    # NOTE: Groq/Llama support multimodal input via specific structures, 
-                    # but for simplicity, we focus on the text prompt as images were causing initial failures.
-                    # Since the prompt is text-only, we stick to the text prompt.
-                    pass 
 
                 response = groq_client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
