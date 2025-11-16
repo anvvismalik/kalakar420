@@ -19,7 +19,6 @@ google-auth==2.36.0
 google-auth-oauthlib==1.2.1
 google-api-python-client==2.154.0
 
-
 # Utilities
 python-dotenv==1.0.1
 requests==2.32.3
@@ -28,9 +27,9 @@ python-dateutil==2.9.0
 # Audio (server-compatible)
 soundfile==0.12.1
 
-
 groq==0.4.2
 httpx==0.24.1
 
-Pillow==10.1.0
+# FIX: Updated to 11.0.0 for Python 3.13 compatibility
+Pillow==11.0.0 
 rembg==2.0.50
