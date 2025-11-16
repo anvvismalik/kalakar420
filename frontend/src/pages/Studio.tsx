@@ -11,8 +11,7 @@ import {
   Star,
   ArrowLeft,
   CheckCircle,
-  Image as ImageIcon,
-  Wand2
+  Image as ImageIcon
 } from "lucide-react";
 import { Button } from '@/components/ui/button'; 
 import { Input } from '@/components/ui/input';
@@ -52,14 +51,6 @@ interface Platform {
     best_for: string;
 }
 
-interface EnhancedImage {
-    url: string;
-    filename: string;
-    variation: number;
-    description: string;
-    size: number;
-}
-
 const Studio: React.FC = () => {
     // --- Auth State ---
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -81,8 +72,8 @@ const Studio: React.FC = () => {
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
-    const [isEnhancing, setIsEnhancing] = useState(false);
-    const [enhancedImages, setEnhancedImages] = useState<EnhancedImage[]>([]);
+    const [isGeneratingImages, setIsGeneratingImages] = useState(false);
+    const [generatedImages, setGeneratedImages] = useState<any[]>([]);
 
     // --- Platform Selection State ---
     const [availablePlatforms, setAvailablePlatforms] = useState<Platform[]>([]);
@@ -125,12 +116,8 @@ const Studio: React.FC = () => {
             return;
         }
 
-        // Construct full URL for audio file
-        const fullUrl = relativeUrl.startsWith('http') 
-            ? relativeUrl 
-            : `${API_BASE_URL.replace('/api', '')}${relativeUrl}`;
-        
-        console.log('[AUDIO] Playing:', fullUrl);
+        // const fullUrl = `http://127.0.0.1:5001${relativeUrl}`; 
+        const fullUrl = relativeUrl;
         
         const handleEnd = () => {
              setIsSpeaking(false);
@@ -138,26 +125,25 @@ const Studio: React.FC = () => {
         
         const handleError = (e: Event | string) => {
             console.error("Audio Playback Error:", e);
-            setError("Audio ready - click 'Replay Question' to hear it");
+            setError("Error playing AI audio.");
             setIsSpeaking(false);
         };
 
         if (audioRef.current) {
              audioRef.current.src = fullUrl;
-             audioRef.current.crossOrigin = 'anonymous';
-             audioRef.current.preload = 'auto';
              
+             // Clean up previous listeners
              audioRef.current.removeEventListener('ended', handleEnd);
              audioRef.current.removeEventListener('error', handleError);
              
+             // Set new listeners
              audioRef.current.addEventListener('ended', handleEnd);
              audioRef.current.addEventListener('error', handleError);
 
              setIsSpeaking(true);
 
              audioRef.current.play().catch(e => {
-                 console.warn("Autoplay blocked or playback error:", e);
-                 setError("Audio ready - click 'Replay Question' to hear it");
+                 console.warn("Autoplay blocked:", e);
                  setIsSpeaking(false);
              });
         }
@@ -238,7 +224,7 @@ const Studio: React.FC = () => {
             if (data.completed) {
                 setIsComplete(true);
                 setAiQuestion(data.message || "Conversation completed!");
-                setAiQuestionEn("Upload your product photo to enhance and generate content");
+                setAiQuestionEn("Select platforms and upload an image to generate content");
             } else {
                 setAiQuestion(data.next_question);
                 setAiQuestionEn(data.next_question_en || data.next_question);
@@ -268,58 +254,9 @@ const Studio: React.FC = () => {
         );
     };
 
-    // --- NEW: Enhance Product Image ---
-    const enhanceProductImage = async () => {
-        if (!imageFile) {
+    const uploadImageAndGenerate = async () => {
+        if (!imageFile || !sessionId) {
             setError("Please upload an image first");
-            return;
-        }
-        
-        try {
-            setIsEnhancing(true);
-            setError('');
-
-            const formData = new FormData();
-            formData.append('image', imageFile);
-            formData.append('num_variations', '3');
-
-            console.log("Enhancing product image...");
-
-            const enhanceResponse = await fetch(`${API_BASE_URL}/enhance-image`, {
-                method: 'POST',
-                credentials: 'include',
-                body: formData
-            });
-            
-            if (!enhanceResponse.ok) {
-                const errorData = await enhanceResponse.json();
-                throw new Error(errorData.error || 'Image enhancement failed');
-            }
-            
-            const enhanceData = await enhanceResponse.json();
-            console.log("Enhanced images:", enhanceData);
-            
-            if (enhanceData.success && enhanceData.enhanced_images) {
-                setEnhancedImages(enhanceData.enhanced_images);
-                // Use the first enhanced image as the main image
-                setImageUrl(enhanceData.enhanced_images[0].url);
-            } else {
-                throw new Error('No enhanced images were created');
-            }
-            
-            setIsEnhancing(false);
-
-        } catch (err) {
-            console.error("Image Enhancement Error:", err);
-            setError(err instanceof Error ? err.message : "Failed to enhance image");
-            setIsEnhancing(false);
-        }
-    };
-
-    // --- Generate Content with Enhanced Image ---
-    const generateContent = async () => {
-        if (!imageUrl || !sessionId) {
-            setError("Please enhance your image first");
             return;
         }
         
@@ -329,12 +266,31 @@ const Studio: React.FC = () => {
         }
         
         try {
-            setIsGenerating(true);
+            setIsUploading(true);
             setError('');
+
+            // Upload image first
+            const formData = new FormData();
+            formData.append('image', imageFile);
+
+            const uploadResponse = await fetch(`${API_BASE_URL}/upload_image`, {
+                method: 'POST',
+                credentials: 'include',
+                body: formData
+            });
+            
+            if (!uploadResponse.ok) throw new Error('Image upload failed');
+            
+            const uploadData = await uploadResponse.json();
+            setImageUrl(uploadData.image_url);
+            setIsUploading(false);
+
+            // Generate content with selected platforms
+            setIsGenerating(true);
             
             console.log("Generating content for platforms:", selectedPlatforms);
             console.log("Session ID:", sessionId);
-            console.log("Image URL:", imageUrl);
+            console.log("Image URL:", uploadData.image_url);
             
             const generateResponse = await fetch(`${API_BASE_URL}/conversation/generate`, {
                 method: 'POST',
@@ -342,8 +298,8 @@ const Studio: React.FC = () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
                     session_id: sessionId,
-                    image_url: imageUrl,
-                    platforms: selectedPlatforms
+                    image_url: uploadData.image_url,
+                    platforms: selectedPlatforms  // THIS WAS MISSING!
                 })
             });
 
@@ -358,27 +314,73 @@ const Studio: React.FC = () => {
             setIsGenerating(false);
 
         } catch (err) {
-            console.error("Generate Content Error:", err);
-            setError(err instanceof Error ? err.message : "Failed to generate content");
+            console.error("Upload/Generate Error:", err);
+            setError(err instanceof Error ? err.message : "Failed to upload or generate");
+            setIsUploading(false);
             setIsGenerating(false);
         }
     };
 
-    const resetConversation = () => {
-        setSessionId(null);
-        setAiQuestion('');
-        setAiQuestionEn('Click "Start Conversation" to begin.');
-        setProgress(0);
-        setIsComplete(false);
-        setCollectedInfo(null);
-        setImageFile(null);
-        setImageUrl(null);
-        setGeneratedContent(null);
-        setEnhancedImages([]);
-        setSelectedPlatforms(['instagram', 'facebook']);
+    const generateProductImages = async () => {
+    if (!sessionId || !imageUrl) {
+        setError("Please upload a product image first");
+        return;
+    }
+    
+    try {
+        setIsGeneratingImages(true);
         setError('');
-    };
+        
+        console.log("Enhancing product image...");
+        
+        const response = await fetch(`${API_BASE_URL}/generate-images`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                image_url: imageUrl,  // Use the uploaded image
+                num_images: 3
+            })
+        });
 
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Image enhancement failed');
+        }
+        
+        const imageData = await response.json();
+        console.log("Enhanced images:", imageData);
+        
+        if (imageData.success && imageData.enhanced_images) {
+            setGeneratedImages(imageData.enhanced_images);
+        } else {
+            throw new Error('No enhanced images were created');
+        }
+        
+        setIsGeneratingImages(false);
+
+    } catch (err) {
+        console.error("Image Enhancement Error:", err);
+        setError(err instanceof Error ? err.message : "Failed to enhance images");
+        setIsGeneratingImages(false);
+    }
+};
+    
+    const resetConversation = () => {
+    setSessionId(null);
+    setAiQuestion('');
+    setAiQuestionEn('Click "Start Conversation" to begin.');
+    setProgress(0);
+    setIsComplete(false);
+    setCollectedInfo(null);
+    setImageFile(null);
+    setImageUrl(null);
+    setGeneratedContent(null);
+    setGeneratedImages([]);  // ✅ ADD THIS LINE
+    setSelectedPlatforms(['instagram', 'facebook']);
+    setError('');
+   };
+    
     return (
         <div className="min-h-screen kalakaar-bg-pattern">
             {/* Header */}
@@ -386,6 +388,7 @@ const Studio: React.FC = () => {
                 <div className="container mx-auto px-4 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <Link to="/" className="flex items-center gap-3">
+                            {/* Logo uses new primary/secondary gradient */}
                             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center">
                                 <Star className="w-5 h-5 text-white fill-white" />
                             </div>
@@ -409,11 +412,13 @@ const Studio: React.FC = () => {
             <div className="container mx-auto px-4 py-12">
                 {/* Hero */}
                 <div className="text-center mb-8">
+                    {/* Tagline uses primary/10 */}
                     <div className="inline-flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full mb-4">
                         <Sparkles className="w-4 h-4 text-primary" />
                         <span className="text-sm font-medium text-primary">AI-Powered Studio</span>
                     </div>
                     <h1 className="text-3xl md:text-4xl font-bold mb-2">
+                        {/* Title uses primary/accent gradient */}
                         <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
                             Create Your Content
                         </span>
@@ -438,6 +443,7 @@ const Studio: React.FC = () => {
                         <CardContent className="pt-6">
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-sm font-medium">Conversation Progress</span>
+                                {/* Progress text uses primary/secondary gradient */}
                                 <span className="text-sm font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                                     {progress}%
                                 </span>
@@ -450,9 +456,10 @@ const Studio: React.FC = () => {
                 {/* Main Grid */}
                 <div className="grid md:grid-cols-3 gap-6 mb-6">
                     
-                    {/* Step 1: Record Audio */}
+                    {/* Step 1: Record Audio (Primary focus) */}
                     <Card className="border-2 shadow-lg">
                         <CardHeader className="bg-primary/5 rounded-t-lg">
+                            {/* Icon uses primary/accent gradient */}
                             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center mb-4">
                                 <Mic className="w-6 h-6 text-white" />
                             </div>
@@ -462,6 +469,7 @@ const Studio: React.FC = () => {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
+                            {/* Status Indicators (Primary for AI speaking, Destructive for recording) */}
                             <div className="text-center py-4">
                                 {isSpeaking && (
                                     <div className="flex items-center justify-center gap-2 text-primary">
@@ -483,6 +491,7 @@ const Studio: React.FC = () => {
                                 )}
                             </div>
 
+                            {/* Recording Button - Primary/Accent Gradient */}
                             {!sessionId ? (
                                 <Button 
                                     className="w-full h-12 bg-gradient-to-r from-primary to-accent text-white hover:opacity-90 shadow-md shadow-primary/20"
@@ -510,6 +519,7 @@ const Studio: React.FC = () => {
                                 </Button>
                             )}
 
+                            {/* Replay Audio */}
                             {sessionId && audioRef.current?.src && (
                                 <Button 
                                     variant="outline"
@@ -524,9 +534,10 @@ const Studio: React.FC = () => {
                         </CardContent>
                     </Card>
 
-                    {/* Step 2: Platform Selection */}
+                    {/* Step 2: Platform Selection (Accent focus) */}
                     <Card className="border-2 shadow-lg">
                         <CardHeader className="bg-accent/5 rounded-t-lg">
+                            {/* Icon uses accent/secondary gradient */}
                             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent to-secondary flex items-center justify-center mb-4">
                                 <Sparkles className="w-6 h-6 text-white" />
                             </div>
@@ -543,6 +554,7 @@ const Studio: React.FC = () => {
                                         checked={selectedPlatforms.includes(platform.id)}
                                         onCheckedChange={() => togglePlatform(platform.id)}
                                         disabled={!isComplete}
+                                        // 🛠️ Checkbox uses accent color
                                         className="data-[state=checked]:bg-accent data-[state=checked]:text-accent-foreground border-accent"
                                     />
                                     <div className="flex-1">
@@ -562,15 +574,16 @@ const Studio: React.FC = () => {
                         </CardContent>
                     </Card>
                     
-                    {/* Step 3: Upload & Enhance Image */}
+                    {/* Step 3: Upload & Generate (Secondary focus) */}
                     <Card className="border-2 shadow-lg">
                         <CardHeader className="bg-secondary/5 rounded-t-lg">
+                            {/* Icon uses secondary/primary gradient */}
                             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-secondary to-primary flex items-center justify-center mb-4">
-                                <Wand2 className="w-6 h-6 text-white" />
+                                <ImageIcon className="w-6 h-6 text-white" />
                             </div>
-                            <CardTitle className="text-xl">Step 3: Enhance Photo</CardTitle>
+                            <CardTitle className="text-xl">Step 3: Upload & Generate</CardTitle>
                             <CardDescription>
-                                Upload & create professional product photos
+                                Add product photo and create content
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
@@ -578,43 +591,37 @@ const Studio: React.FC = () => {
                                 type="file" 
                                 accept="image/*" 
                                 onChange={handleImageChange}
-                                disabled={!isComplete || isEnhancing}
+                                disabled={!isComplete || isUploading}
                             />
                             
-                            {imageFile && !enhancedImages.length && (
+                            {imageFile && !imageUrl && (
                                 <p className="text-sm text-muted-foreground">
                                     Selected: {imageFile.name}
                                 </p>
                             )}
 
-                            {enhancedImages.length > 0 && (
+                            {imageUrl && (
                                 <div className="text-center">
                                     <CheckCircle className="w-8 h-8 text-secondary mx-auto mb-2" />
-                                    <p className="text-sm text-secondary font-medium">
-                                        {enhancedImages.length} professional photos created!
-                                    </p>
+                                    <p className="text-sm text-secondary">Image uploaded!</p>
                                 </div>
                             )}
 
+                            {/* Generate Button - Secondary/Primary Gradient (complements Step 1) */}
                             <Button 
                                 className="w-full h-12 bg-gradient-to-r from-secondary to-primary text-white hover:opacity-90 shadow-md shadow-secondary/20"
-                                onClick={enhanceProductImage}
-                                disabled={!isComplete || !imageFile || isEnhancing || enhancedImages.length > 0}
+                                onClick={uploadImageAndGenerate}
+                                disabled={!isComplete || !imageFile || selectedPlatforms.length === 0 || isUploading || isGenerating}
                             >
-                                {isEnhancing ? (
+                                {isUploading || isGenerating ? (
                                     <>
                                         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Enhancing Image...
-                                    </>
-                                ) : enhancedImages.length > 0 ? (
-                                    <>
-                                        <CheckCircle className="w-4 h-4 mr-2" />
-                                        Image Enhanced
+                                        {isUploading ? 'Uploading...' : 'Generating...'}
                                     </>
                                 ) : (
                                     <>
-                                        <Wand2 className="w-4 h-4 mr-2" />
-                                        Enhance Image
+                                        <Sparkles className="w-4 h-4 mr-2" />
+                                        Generate Content
                                     </>
                                 )}
                             </Button>
@@ -622,98 +629,25 @@ const Studio: React.FC = () => {
                     </Card>
                 </div>
 
-                {/* Enhanced Images Display */}
-                {enhancedImages.length > 0 && !generatedContent && (
-                    <Card className="border-2 shadow-lg mb-6">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2 text-2xl">
-                                <Wand2 className="w-6 h-6 text-secondary" />
-                                <span className="bg-gradient-to-r from-secondary to-primary bg-clip-text text-transparent">
-                                    Professional Product Photos
-                                </span>
-                            </CardTitle>
-                            <CardDescription>
-                                {enhancedImages.length} professional variations with clean backgrounds
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="grid md:grid-cols-3 gap-6">
-                                {enhancedImages.map((img, index) => (
-                                    <div key={index} className="border-2 border-secondary/20 rounded-lg overflow-hidden hover:border-secondary/50 transition-colors">
-                                        <div className="relative aspect-square">
-                                            <img 
-                                                src={img.url} 
-                                                alt={img.description}
-                                                className="w-full h-full object-cover"
-                                            />
-                                            <div className="absolute top-2 right-2 bg-secondary text-white px-3 py-1 rounded-full text-xs font-medium">
-                                                Style {img.variation}
-                                            </div>
-                                        </div>
-                                        <div className="p-4 bg-card/50">
-                                            <p className="text-sm font-medium mb-2">{img.description}</p>
-                                            <p className="text-xs text-muted-foreground mb-3">
-                                                {(img.size / 1024).toFixed(0)} KB
-                                            </p>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                className="w-full border-secondary text-secondary hover:bg-secondary/10"
-                                                onClick={() => window.open(img.url, '_blank')}
-                                            >
-                                                <Upload className="w-4 h-4 mr-2" />
-                                                Download
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="bg-accent/5 p-6 rounded-lg">
-                                <p className="text-center text-sm text-muted-foreground mb-4">
-                                    Ready to generate social media content using these photos?
-                                </p>
-                                <Button 
-                                    className="w-full h-12 bg-gradient-to-r from-accent to-primary text-white hover:opacity-90 shadow-md"
-                                    onClick={generateContent}
-                                    disabled={selectedPlatforms.length === 0 || isGenerating}
-                                >
-                                    {isGenerating ? (
-                                        <>
-                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                            Generating Content...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Sparkles className="w-4 h-4 mr-2" />
-                                            Generate Content for {selectedPlatforms.length} Platform(s)
-                                        </>
-                                    )}
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-
                 {/* Generated Content Display */}
                 {generatedContent && (
                     <Card className="border-2 shadow-lg">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-2xl">
                                 <Sparkles className="w-6 h-6 text-primary" />
+                                {/* Title gradient uses primary/secondary */}
                                 <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                                     Your Generated Content
                                 </span>
                             </CardTitle>
                             <CardDescription>
-                                Content generated for {generatedContent.platforms.length} platform(s) using {generatedContent.model_used}
+                                Content generated for {generatedContent.platforms.length} platform(s)
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            {/* Show selected enhanced image */}
                             {imageUrl && (
                                 <div className="rounded-lg overflow-hidden border-2 border-primary/20">
-                                    <img src={imageUrl} alt="Selected Product Photo" className="w-full h-auto max-h-96 object-cover" />
+                                    <img src={imageUrl} alt="Product" className="w-full h-auto max-h-96 object-cover" />
                                 </div>
                             )}
 
@@ -753,7 +687,7 @@ const Studio: React.FC = () => {
                                 </div>
                             ))}
 
-                            {/* Create Another Product Button */}
+                            {/* Create Another Product Button - Primary/Secondary Gradient */}
                             <Button
                                 onClick={resetConversation}
                                 size="lg"
@@ -765,6 +699,97 @@ const Studio: React.FC = () => {
                         </CardContent>
                     </Card>
                 )}
+                {/* Image Generation Section */}
+{isComplete && !generatedImages.length && (
+    <Card className="border-2 shadow-lg border-accent/20">
+        <CardHeader className="bg-accent/5">
+            <CardTitle className="flex items-center gap-2 text-2xl">
+                <ImageIcon className="w-6 h-6 text-accent" />
+                <span className="bg-gradient-to-r from-accent to-primary bg-clip-text text-transparent">
+                    Generate Product Images
+                </span>
+            </CardTitle>
+            <CardDescription>
+                Create AI-generated visual mockups of your product
+            </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+            <div className="bg-accent/5 p-6 rounded-lg text-center">
+                <ImageIcon className="w-16 h-16 text-accent mx-auto mb-4 opacity-50" />
+                <p className="text-muted-foreground mb-4">
+                    Generate professional product images using AI based on your product description
+                </p>
+                
+                <Button 
+                    className="bg-gradient-to-r from-accent to-secondary text-white hover:opacity-90 shadow-md shadow-accent/20 h-12 px-8"
+                    onClick={generateProductImages}
+                    disabled={isGeneratingImages}
+                >
+                    {isGeneratingImages ? (
+                        <>
+                            <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                            Generating Images...
+                        </>
+                    ) : (
+                        <>
+                            <Sparkles className="w-5 h-5 mr-2" />
+                            Generate 3 Product Images
+                        </>
+                    )}
+                </Button>
+            </div>
+        </CardContent>
+    </Card>
+)}
+
+{/* Generated Images Display */}
+{generatedImages.length > 0 && (
+    <Card className="border-2 shadow-lg">
+        <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-2xl">
+                <CheckCircle className="w-6 h-6 text-accent" />
+                <span className="bg-gradient-to-r from-accent to-secondary bg-clip-text text-transparent">
+                    Generated Product Images
+                </span>
+            </CardTitle>
+            <CardDescription>
+                {generatedImages.length} AI-generated variations created
+            </CardDescription>
+        </CardHeader>
+        <CardContent>
+            <div className="grid md:grid-cols-3 gap-6">
+                {generatedImages.map((img, index) => (
+                    <div key={index} className="border-2 border-accent/20 rounded-lg overflow-hidden hover:border-accent/50 transition-colors">
+                        <div className="relative aspect-square">
+                            <img 
+                                src={img.url} 
+                                alt={`Generated variation ${index + 1}`}
+                                className="w-full h-full object-cover"
+                            />
+                            <div className="absolute top-2 right-2 bg-accent text-white px-3 py-1 rounded-full text-xs font-medium">
+                                Variation {img.variation}
+                            </div>
+                        </div>
+                        <div className="p-4 bg-card/50">
+                            <p className="text-xs text-muted-foreground mb-3">
+                                {img.prompt?.substring(0, 80)}...
+                            </p>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="w-full border-accent text-accent hover:bg-accent/10"
+                                onClick={() => window.open(img.url, '_blank')}
+                            >
+                                <Upload className="w-4 h-4 mr-2" />
+                                Download Image
+                            </Button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </CardContent>
+    </Card>
+)}
 
                 {/* Debug Info (Remove in production) */}
                 {process.env.NODE_ENV === 'development' && (
@@ -779,8 +804,7 @@ const Studio: React.FC = () => {
                                 isComplete, 
                                 selectedPlatforms,
                                 collectedInfo, 
-                                imageUrl,
-                                enhancedImagesCount: enhancedImages.length
+                                imageUrl
                             }, null, 2)}
                         </pre>
                     </details>

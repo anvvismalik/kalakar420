@@ -12,7 +12,7 @@ import time
 from datetime import datetime
 import json
 import traceback
-from PIL import Image, ImageDraw, ImageFilter, ImageEnhance
+from PIL import Image 
 import base64
 from sqlalchemy.engine.url import make_url
 # --- GOOGLE CLOUD IMPORTS ---
@@ -70,8 +70,14 @@ else:
 # Translation API Key
 TRANSLATION_API_KEY = os.getenv("TRANSLATION_API_KEY")
 
-# Remove.bg API Key (Optional - for better background removal)
-REMOVEBG_API_KEY = os.getenv("REMOVEBG_API_KEY")
+# CLIPDROP API Configuration
+CLIPDROP_API_KEY = os.getenv("CLIPDROP_API_KEY")
+CLIPDROP_AVAILABLE = bool(CLIPDROP_API_KEY)
+
+if CLIPDROP_AVAILABLE:
+    print("✓ Clipdrop API configured")
+else:
+    print("⚠ Clipdrop API key not found. Set CLIPDROP_API_KEY in environment variables")
 
 app = Flask(__name__)
 
@@ -80,18 +86,23 @@ raw_database_url = os.environ.get('DATABASE_URL')
 
 # Convert to use psycopg driver explicitly
 if raw_database_url:
+    # Parse and rebuild the URL with explicit psycopg driver
     url_obj = make_url(raw_database_url)
+    
+    # Explicitly set the driver to psycopg
     url_obj = url_obj.set(drivername="postgresql+psycopg")
+    
     database_url = str(url_obj)
     print(f"✓ Database configured with psycopg driver: {url_obj.drivername}")
 else:
     database_url = None
     print("⚠ No database URL found, using SQLite")
 
+# Use PostgreSQL in production, SQLite for local development
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///db.sqlite'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Engine options for connection pooling
+# Engine options for connection pooling (simplified for SQLite)
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
     'pool_recycle': 300,
@@ -102,28 +113,21 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or 'a_super_secret_key_c
 print(f"✓ Database: {'PostgreSQL (Production)' if database_url else 'SQLite (Development)'}")
 
 # Session configuration
-app.config['SESSION_COOKIE_SAMESITE'] = 'None'
-app.config['SESSION_COOKIE_SECURE'] = True
-app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'None'  # Required for cross-domain
+app.config['SESSION_COOKIE_SECURE'] = True       # Required when SameSite=None
+app.config['SESSION_COOKIE_HTTPONLY'] = True     # Security best practice
 app.config['SESSION_COOKIE_PATH'] = '/'
-app.config['SESSION_COOKIE_DOMAIN'] = None
+app.config['SESSION_COOKIE_DOMAIN'] = None       # Let browser handle it
 app.config['SESSION_COOKIE_NAME'] = 'kalakar_session'
 app.config['PERMANENT_SESSION_LIFETIME'] = 86400
 
 # File Upload Configuration
 UPLOAD_FOLDER = 'uploads'
 AUDIO_FOLDER = 'audio_responses'
-GENERATED_IMAGES_FOLDER = 'generated_images'
-ENHANCED_IMAGES_FOLDER = 'enhanced_images'  # NEW: For enhanced product photos
+ENHANCED_IMAGES_FOLDER = 'enhanced_images'  # Changed from generated_images
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  
 
-# Create all necessary folders
-for folder in [UPLOAD_FOLDER, AUDIO_FOLDER, GENERATED_IMAGES_FOLDER, ENHANCED_IMAGES_FOLDER]:
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-
-# Configure CORS
 CORS(app, 
      supports_credentials=True,
      origins=[
@@ -147,7 +151,6 @@ CORS(app,
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['AUDIO_FOLDER'] = AUDIO_FOLDER
-app.config['GENERATED_IMAGES_FOLDER'] = GENERATED_IMAGES_FOLDER
 app.config['ENHANCED_IMAGES_FOLDER'] = ENHANCED_IMAGES_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
@@ -199,8 +202,7 @@ class Content(db.Model):
     image_url = db.Column(db.String(255))
     generated_description = db.Column(db.Text)
     generated_captions = db.Column(db.Text)
-    generated_images = db.Column(db.Text)
-    enhanced_images = db.Column(db.Text)  # NEW: For enhanced product photos
+    enhanced_images = db.Column(db.Text)  # Store enhanced image URLs
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -212,7 +214,6 @@ class Content(db.Model):
             'image_url': self.image_url,
             'generated_description': self.generated_description,
             'generated_captions': self.generated_captions,
-            'generated_images': json.loads(self.generated_images) if self.generated_images else None,
             'enhanced_images': json.loads(self.enhanced_images) if self.enhanced_images else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
@@ -246,9 +247,14 @@ def init_database():
     """Initialize database tables - creates all tables on startup"""
     with app.app_context():
         try:
+            # Import all models to ensure they're registered
             from sqlalchemy import inspect
+            
+            # Check if tables exist
             inspector = inspect(db.engine)
             existing_tables = inspector.get_table_names()
+            
+            # Create all tables
             db.create_all()
             
             print("=" * 60)
@@ -261,8 +267,10 @@ def init_database():
             
         except Exception as e:
             print(f"⚠ Database initialization error: {e}")
+            import traceback
             traceback.print_exc()
 
+# IMPORTANT: Call this right after defining it
 init_database()
 
 
@@ -437,205 +445,218 @@ def text_to_speech_punjabi(text, output_filename):
         return None
 
 
-# ==================== IMAGE ENHANCEMENT FUNCTIONS ====================
+# ==================== CLIPDROP IMAGE ENHANCEMENT ====================
 
-def remove_background_rembg(image_path):
+def enhance_image_with_clipdrop(image_path, product_info=None):
     """
-    Remove background using rembg (free, local processing)
-    Install: pip install rembg
+    Enhance product image using Clipdrop APIs:
+    1. Remove background
+    2. Replace with professional background
+    3. Optional: Improve lighting
+    
+    Returns: dict with enhanced image info or None if failed
     """
-    try:
-        from rembg import remove
-        
-        print(f"[REMBG] Removing background from {image_path}")
-        
-        with open(image_path, 'rb') as input_file:
-            input_data = input_file.read()
-        
-        output_data = remove(input_data)
-        
-        # Convert to PIL Image
-        output_image = Image.open(io.BytesIO(output_data))
-        print(f"[REMBG] ✓ Background removed successfully")
-        
-        return output_image
-    except ImportError:
-        print("[REMBG] ⚠ rembg not installed. Install with: pip install rembg")
-        return None
-    except Exception as e:
-        print(f"[REMBG] Error: {str(e)}")
-        traceback.print_exc()
-        return None
-
-
-def remove_background_removebg(image_path):
-    """
-    Remove background using remove.bg API (50 free images/month)
-    Get API key from: https://remove.bg/api
-    """
-    if not REMOVEBG_API_KEY:
-        print("[REMOVEBG] API key not configured")
+    if not CLIPDROP_AVAILABLE:
+        print("[CLIPDROP] API key not configured")
         return None
     
     try:
-        print(f"[REMOVEBG] Removing background from {image_path}")
+        print(f"[CLIPDROP] Starting image enhancement for: {image_path}")
         
-        with open(image_path, 'rb') as image_file:
-            response = requests.post(
-                'https://api.remove.bg/v1.0/removebg',
-                files={'image_file': image_file},
-                data={'size': 'auto'},
-                headers={'X-Api-Key': REMOVEBG_API_KEY},
-                timeout=30
-            )
+        # Read original image
+        with open(image_path, 'rb') as img_file:
+            image_data = img_file.read()
         
-        if response.status_code == 200:
-            output_image = Image.open(io.BytesIO(response.content))
-            print(f"[REMOVEBG] ✓ Background removed successfully")
-            return output_image
-        else:
-            print(f"[REMOVEBG] Error: {response.status_code} - {response.text}")
+        # Step 1: Remove Background
+        print("[CLIPDROP] Step 1: Removing background...")
+        remove_bg_response = requests.post(
+            'https://clipdrop-api.co/remove-background/v1',
+            files={'image_file': ('image.jpg', image_data, 'image/jpeg')},
+            headers={'x-api-key': CLIPDROP_API_KEY},
+            timeout=30
+        )
+        
+        if remove_bg_response.status_code != 200:
+            print(f"[CLIPDROP] Background removal failed: {remove_bg_response.status_code}")
+            print(f"[CLIPDROP] Response: {remove_bg_response.text}")
             return None
-            
-    except Exception as e:
-        print(f"[REMOVEBG] Error: {str(e)}")
-        traceback.print_exc()
-        return None
-
-
-def create_professional_background(product_img, bg_type="white"):
-    """
-    Create professional product photo with clean background
-    bg_type: "white", "light_gray", "gradient"
-    """
-    try:
-        # Ensure product image has transparency
-        if product_img.mode != 'RGBA':
-            product_img = product_img.convert('RGBA')
         
-        # Get product dimensions
-        width, height = product_img.size
+        no_bg_image = remove_bg_response.content
+        print("[CLIPDROP] ✓ Background removed successfully")
         
-        # Create canvas (slightly larger for padding)
-        canvas_size = max(width, height) + 200
-        canvas = Image.new('RGBA', (canvas_size, canvas_size), (255, 255, 255, 255))
+        # Step 2: Replace Background with professional setting
+        print("[CLIPDROP] Step 2: Adding professional background...")
         
-        # Create background based on type
-        if bg_type == "white":
-            bg_color = (255, 255, 255, 255)
-        elif bg_type == "light_gray":
-            bg_color = (245, 245, 245, 255)
-        elif bg_type == "gradient":
-            # Create gradient background
-            bg = Image.new('RGBA', (canvas_size, canvas_size), (255, 255, 255, 255))
-            draw = ImageDraw.Draw(bg)
-            for i in range(canvas_size):
-                shade = 255 - int((i / canvas_size) * 20)  # Subtle gradient
-                draw.line([(0, i), (canvas_size, i)], fill=(shade, shade, shade, 255))
-            canvas = bg
+        # Create professional background prompt based on product type
+        craft_type = "handcrafted product"
+        if product_info:
+            craft_info = product_info.get('craft_type', {})
+            if isinstance(craft_info, dict):
+                craft_type = craft_info.get('english', craft_type)
+            else:
+                craft_type = str(craft_info)
+        
+        background_prompt = f"Professional studio setup for {craft_type}, clean white background, soft studio lighting, minimalist product photography, premium e-commerce aesthetic"
+        
+        replace_bg_response = requests.post(
+            'https://clipdrop-api.co/replace-background/v1',
+            files={
+                'image_file': ('image.png', no_bg_image, 'image/png')
+            },
+            data={
+                'prompt': background_prompt
+            },
+            headers={'x-api-key': CLIPDROP_API_KEY},
+            timeout=30
+        )
+        
+        if replace_bg_response.status_code != 200:
+            print(f"[CLIPDROP] Background replacement failed: {replace_bg_response.status_code}")
+            print(f"[CLIPDROP] Response: {replace_bg_response.text}")
+            # Still save the no-background version
+            enhanced_image = no_bg_image
         else:
-            bg_color = (255, 255, 255, 255)
+            enhanced_image = replace_bg_response.content
+            print("[CLIPDROP] ✓ Background replaced successfully")
         
-        if bg_type != "gradient":
-            canvas.paste(bg_color, (0, 0, canvas_size, canvas_size))
+        # Save enhanced image
+        timestamp = int(time.time())
+        filename = f"enhanced_{timestamp}_{os.path.basename(image_path)}"
+        output_path = os.path.join(app.config['ENHANCED_IMAGES_FOLDER'], filename)
         
-        # Center the product
-        x_offset = (canvas_size - width) // 2
-        y_offset = (canvas_size - height) // 2
+        with open(output_path, 'wb') as out_file:
+            out_file.write(enhanced_image)
         
-        # Add subtle shadow
-        shadow = Image.new('RGBA', product_img.size, (0, 0, 0, 0))
-        shadow.paste((0, 0, 0, 30), product_img.split()[3])  # Use alpha as mask
-        shadow = shadow.filter(ImageFilter.GaussianBlur(radius=10))
-        canvas.paste(shadow, (x_offset + 5, y_offset + 10), shadow)
+        file_size = os.path.getsize(output_path)
+        print(f"[CLIPDROP] ✓ Saved enhanced image: {filename} ({file_size} bytes)")
         
-        # Paste product
-        canvas.paste(product_img, (x_offset, y_offset), product_img)
+        base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
+        image_url = f'{base_url}/enhanced_images/{filename}'
         
-        # Enhance image quality
-        enhancer = ImageEnhance.Sharpness(canvas)
-        canvas = enhancer.enhance(1.2)
-        
-        enhancer = ImageEnhance.Contrast(canvas)
-        canvas = enhancer.enhance(1.1)
-        
-        return canvas.convert('RGB')
+        return {
+            'url': image_url,
+            'filename': filename,
+            'size': file_size,
+            'method': 'clipdrop_enhancement',
+            'original_image': os.path.basename(image_path)
+        }
         
     except Exception as e:
-        print(f"[BG_CREATE] Error: {str(e)}")
+        print(f"[CLIPDROP] Error: {str(e)}")
         traceback.print_exc()
         return None
 
 
-def enhance_product_image(image_path, num_variations=3):
+def create_multiple_background_variants(image_path, product_info=None, num_variants=3):
     """
-    Main function to enhance product images
-    Creates 3 professional variations with different backgrounds
+    Create multiple professional background variants of the product image
+    
+    Returns: list of enhanced image dicts
     """
+    if not CLIPDROP_AVAILABLE:
+        print("[CLIPDROP] API key not configured")
+        return None
+    
     try:
-        print(f"[ENHANCE] Starting enhancement of {image_path}")
+        print(f"[CLIPDROP] Creating {num_variants} background variants...")
         
-        # Step 1: Remove background (try rembg first, then remove.bg)
-        product_no_bg = remove_background_rembg(image_path)
+        # Read original image
+        with open(image_path, 'rb') as img_file:
+            image_data = img_file.read()
         
-        if not product_no_bg:
-            product_no_bg = remove_background_removebg(image_path)
+        # Step 1: Remove Background (do this once)
+        print("[CLIPDROP] Removing background...")
+        remove_bg_response = requests.post(
+            'https://clipdrop-api.co/remove-background/v1',
+            files={'image_file': ('image.jpg', image_data, 'image/jpeg')},
+            headers={'x-api-key': CLIPDROP_API_KEY},
+            timeout=30
+        )
         
-        if not product_no_bg:
-            print("[ENHANCE] ⚠ Background removal failed, using original image")
-            product_no_bg = Image.open(image_path).convert('RGBA')
+        if remove_bg_response.status_code != 200:
+            print(f"[CLIPDROP] Background removal failed")
+            return None
         
-        # Step 2: Create 3 variations with different backgrounds
-        background_styles = [
-            ("white", "Pure White Background"),
-            ("light_gray", "Light Gray Background"),
-            ("gradient", "Subtle Gradient Background")
+        no_bg_image = remove_bg_response.content
+        print("[CLIPDROP] ✓ Background removed")
+        
+        # Get product context
+        craft_type = "handcrafted product"
+        if product_info:
+            craft_info = product_info.get('craft_type', {})
+            if isinstance(craft_info, dict):
+                craft_type = craft_info.get('english', craft_type)
+            else:
+                craft_type = str(craft_info)
+        
+        # Different professional background prompts
+        background_prompts = [
+            f"Clean white studio background, professional product photography for {craft_type}, soft even lighting, minimalist",
+            f"Neutral beige background, premium e-commerce photography for {craft_type}, natural lighting, elegant",
+            f"Soft gradient background, modern product photography for {craft_type}, studio lighting, professional"
         ]
         
         enhanced_images = []
-        base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
         
-        for idx, (bg_type, description) in enumerate(background_styles[:num_variations]):
+        # Step 2: Create variants with different backgrounds
+        for idx, prompt in enumerate(background_prompts[:num_variants]):
             try:
-                print(f"[ENHANCE] Creating variation {idx + 1}: {description}")
+                print(f"[CLIPDROP] Creating variant {idx + 1}/{num_variants}...")
                 
-                # Create professional background
-                enhanced_img = create_professional_background(product_no_bg, bg_type)
+                replace_bg_response = requests.post(
+                    'https://clipdrop-api.co/replace-background/v1',
+                    files={
+                        'image_file': ('image.png', no_bg_image, 'image/png')
+                    },
+                    data={
+                        'prompt': prompt
+                    },
+                    headers={'x-api-key': CLIPDROP_API_KEY},
+                    timeout=30
+                )
                 
-                if enhanced_img:
-                    # Save the enhanced image
+                if replace_bg_response.status_code == 200:
                     timestamp = int(time.time())
-                    filename = f"enhanced_{timestamp}_{idx}.jpg"
-                    filepath = os.path.join(app.config['ENHANCED_IMAGES_FOLDER'], filename)
+                    filename = f"enhanced_{timestamp}_variant{idx + 1}.png"
+                    output_path = os.path.join(app.config['ENHANCED_IMAGES_FOLDER'], filename)
                     
-                    enhanced_img.save(filepath, 'JPEG', quality=95, optimize=True)
+                    with open(output_path, 'wb') as out_file:
+                        out_file.write(replace_bg_response.content)
                     
-                    if os.path.exists(filepath):
-                        file_size = os.path.getsize(filepath)
-                        print(f"[ENHANCE] ✓ Saved: {filename} ({file_size} bytes)")
-                        
-                        image_url = f'{base_url}/enhanced_images/{filename}'
-                        
-                        enhanced_images.append({
-                            'url': image_url,
-                            'filename': filename,
-                            'variation': idx + 1,
-                            'description': description,
-                            'size': file_size
-                        })
+                    file_size = os.path.getsize(output_path)
+                    base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
+                    image_url = f'{base_url}/enhanced_images/{filename}'
+                    
+                    enhanced_images.append({
+                        'url': image_url,
+                        'filename': filename,
+                        'variant': idx + 1,
+                        'background_style': prompt.split(',')[0],
+                        'size': file_size,
+                        'method': 'clipdrop_variant'
+                    })
+                    
+                    print(f"[CLIPDROP] ✓ Variant {idx + 1} created")
+                else:
+                    print(f"[CLIPDROP] Variant {idx + 1} failed: {replace_bg_response.status_code}")
+                
+                # Rate limiting delay
+                if idx < num_variants - 1:
+                    time.sleep(1)
+                    
             except Exception as e:
-                print(f"[ENHANCE] Error creating variation {idx + 1}: {str(e)}")
+                print(f"[CLIPDROP] Error creating variant {idx + 1}: {str(e)}")
                 continue
         
         if enhanced_images:
-            print(f"[ENHANCE] ✓ Successfully created {len(enhanced_images)} enhanced images")
+            print(f"[CLIPDROP] Successfully created {len(enhanced_images)} variants")
             return enhanced_images
         else:
-            print("[ENHANCE] ⚠ No enhanced images were created")
+            print("[CLIPDROP] No variants were created")
             return None
             
     except Exception as e:
-        print(f"[ENHANCE] Fatal error: {str(e)}")
+        print(f"[CLIPDROP] Fatal error: {str(e)}")
         traceback.print_exc()
         return None
 
@@ -647,13 +668,8 @@ def home():
     return jsonify({
         'status': 'online',
         'service': 'Kalakar AI Backend',
-        'version': '1.0.1',
-        'features': {
-            'speech_to_text': speech_client is not None,
-            'text_to_speech': tts_client is not None,
-            'image_enhancement': True,
-            'content_generation': True
-        }
+        'version': '2.0.0',
+        'features': ['clipdrop_image_enhancement']
     }), 200
 
 
@@ -667,11 +683,13 @@ def health_check():
             'text_to_speech': 'active' if tts_client else 'inactive',
             'translation': 'active' if TRANSLATION_API_KEY else 'inactive',
             'gemini_content': 'active',
-            'image_enhancement': 'active',
+            'clipdrop_enhancement': 'active' if CLIPDROP_AVAILABLE else 'not_configured',
             'database': 'postgresql' if database_url else 'sqlite'
         }
     }), 200
 
+
+# ==================== PLATFORMS ENDPOINT ====================
 
 @app.route('/api/platforms', methods=['GET'])
 def get_platforms():
@@ -868,87 +886,103 @@ def respond_to_conversation():
 # ==================== IMAGE ENHANCEMENT ENDPOINT ====================
 
 @app.route('/api/enhance-image', methods=['POST'])
-def enhance_image_endpoint():
+def enhance_product_image():
     """
-    NEW ENDPOINT - Enhance uploaded product image
-    Removes background and creates 3 professional variations
+    ROUTE ENDPOINT - Enhance product image using Clipdrop API
+    Removes unprofessional background and adds professional studio setting
     """
     try:
-        print("=" * 60)
-        print("🎨 IMAGE ENHANCEMENT REQUEST RECEIVED")
-        print("=" * 60)
+        if not CLIPDROP_AVAILABLE:
+            return jsonify({
+                'error': 'Image enhancement not available',
+                'details': 'CLIPDROP_API_KEY not configured',
+                'success': False
+            }), 503
         
         user = get_current_user()
         if not user:
             return jsonify({'error': 'Not authenticated', 'success': False}), 401
         
-        # Get image from request
+        # Check if image file is provided
         if 'image' not in request.files:
-            return jsonify({'error': 'No image provided', 'success': False}), 400
+            return jsonify({'error': 'No image file provided', 'success': False}), 400
         
-        image_file = request.files['image']
-        if not image_file or not image_file.filename:
-            return jsonify({'error': 'Invalid image file', 'success': False}), 400
+        file = request.files['image']
+        if file.filename == '':
+            return jsonify({'error': 'No selected file', 'success': False}), 400
         
-        if not allowed_file(image_file.filename):
+        if not allowed_file(file.filename):
             return jsonify({'error': 'Invalid file type', 'success': False}), 400
         
-        # Save original image temporarily
-        timestamp = int(time.time())
-        original_filename = f"original_{timestamp}_{secure_filename(image_file.filename)}"
-        original_path = os.path.join(app.config['UPLOAD_FOLDER'], original_filename)
-        image_file.save(original_path)
-        
-        print(f"✅ Original image saved: {original_path}")
-        
         # Get optional parameters
-        num_variations = int(request.form.get('num_variations', 3))
-        if num_variations < 1 or num_variations > 3:
-            num_variations = 3
+        session_id = request.form.get('session_id')
+        create_variants = request.form.get('create_variants', 'false').lower() == 'true'
+        num_variants = int(request.form.get('num_variants', 3))
+        
+        # Save original image
+        timestamp = int(time.time())
+        filename = f"{timestamp}_{secure_filename(file.filename)}"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        print(f"[ENHANCE] Original image saved: {filepath}")
+        
+        # Get product info if session_id provided
+        product_info = None
+        if session_id:
+            conversation = Conversation.query.filter_by(
+                session_id=session_id,
+                user_id=user.id
+            ).first()
+            
+            if conversation and conversation.is_complete:
+                try:
+                    product_info = json.loads(conversation.collected_info)
+                except:
+                    pass
         
         # Enhance the image
-        enhanced_images = enhance_product_image(original_path, num_variations)
+        if create_variants:
+            enhanced_images = create_multiple_background_variants(
+                filepath,
+                product_info,
+                num_variants
+            )
+        else:
+            single_result = enhance_image_with_clipdrop(filepath, product_info)
+            enhanced_images = [single_result] if single_result else None
         
         if not enhanced_images:
             return jsonify({
                 'error': 'Image enhancement failed',
-                'details': 'Could not create enhanced versions. Check server logs.',
+                'details': 'Could not process image. Check server logs.',
                 'success': False
             }), 500
         
         # Save to database
         try:
-            content = Content.query.filter_by(user_id=user.id).order_by(Content.created_at.desc()).first()
+            base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
+            original_url = f'{base_url}/uploads/{filename}'
             
-            if content:
-                content.enhanced_images = json.dumps(enhanced_images)
-                db.session.commit()
-            else:
-                content = Content(
-                    user_id=user.id,
-                    image_url=f'{request.host_url.rstrip("/")}/uploads/{original_filename}',
-                    enhanced_images=json.dumps(enhanced_images)
-                )
-                db.session.add(content)
-                db.session.commit()
-                
+            content = Content(
+                user_id=user.id,
+                image_url=original_url,
+                enhanced_images=json.dumps(enhanced_images)
+            )
+            db.session.add(content)
+            db.session.commit()
+            
         except Exception as db_error:
             print(f"[ENHANCE] DB error: {db_error}")
-            traceback.print_exc()
             db.session.rollback()
-        
-        print("=" * 60)
-        print("✅ IMAGE ENHANCEMENT COMPLETE")
-        print(f"📊 Created {len(enhanced_images)} enhanced versions")
-        print("=" * 60)
         
         return jsonify({
             'success': True,
+            'original_image': original_url,
             'enhanced_images': enhanced_images,
             'count': len(enhanced_images),
-            'original_url': f'{request.host_url.rstrip("/")}/uploads/{original_filename}',
-            'method': 'rembg + PIL',
-            'message': f'Successfully created {len(enhanced_images)} professional product photos'
+            'method': 'clipdrop',
+            'message': f'Successfully enhanced image with {len(enhanced_images)} variant(s)'
         }), 200
         
     except Exception as e:
@@ -972,7 +1006,7 @@ def upload_image():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         
-        base_url = os.getenv('BASE_URL', request.host_url.rstrip('/'))
+        base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
         image_url = f'{base_url}/uploads/{filename}'
         
         return jsonify({'message': 'Image uploaded!', 'image_url': image_url}), 200
@@ -982,50 +1016,21 @@ def upload_image():
 
 @app.route('/uploads/<filename>')
 def serve_image(filename):
-    response = send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
-    response.headers['Cache-Control'] = 'public, max-age=31536000'
-    return response
-
-
-@app.route('/generated_images/<filename>')
-def serve_generated_image(filename):
-    """Serve AI generated images"""
-    try:
-        response = send_from_directory(app.config['GENERATED_IMAGES_FOLDER'], filename)
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
-        response.headers['Cache-Control'] = 'public, max-age=31536000'
-        return response
-    except FileNotFoundError:
-        return jsonify({'error': 'Image not found'}), 404
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
 @app.route('/enhanced_images/<filename>')
 def serve_enhanced_image(filename):
-    """NEW: Serve enhanced product images"""
+    """Serve Clipdrop enhanced images"""
     try:
-        response = send_from_directory(app.config['ENHANCED_IMAGES_FOLDER'], filename)
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
-        response.headers['Cache-Control'] = 'public, max-age=31536000'
-        return response
+        return send_from_directory(app.config['ENHANCED_IMAGES_FOLDER'], filename)
     except FileNotFoundError:
-        return jsonify({'error': 'Enhanced image not found'}), 404
+        return jsonify({'error': 'Image not found'}), 404
 
 
 @app.route('/audio/<filename>')
 def serve_audio(filename):
-    try:
-        response = send_from_directory(app.config['AUDIO_FOLDER'], filename, mimetype='audio/mpeg')
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Cross-Origin-Resource-Policy'] = 'cross-origin'
-        response.headers['Cache-Control'] = 'public, max-age=3600'
-        response.headers['Accept-Ranges'] = 'bytes'
-        return response
-    except FileNotFoundError:
-        return jsonify({'error': 'Audio file not found'}), 404
+    return send_from_directory(app.config['AUDIO_FOLDER'], filename, mimetype='audio/mpeg')
 
 
 @app.route('/api/conversation/generate', methods=['POST'])
@@ -1118,27 +1123,62 @@ def generate_from_conversation():
         product_text = "\n".join(product_details_list)
         print(f"📄 Product Text:\n{product_text}")
         
+        # Load image if provided
+        image_part = None
+        image_base64 = None
+        if image_url:
+            try:
+                print(f"🖼️ Loading image from: {image_url}")
+                image_filename = os.path.basename(image_url)
+                
+                # Check if it's an enhanced image
+                if 'enhanced_images' in image_url:
+                    image_filepath = os.path.join(app.config['ENHANCED_IMAGES_FOLDER'], image_filename)
+                else:
+                    image_filepath = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
+                
+                if os.path.exists(image_filepath):
+                    print(f"✅ Image found locally: {image_filepath}")
+                    image_part = Image.open(image_filepath)
+                    
+                    # Convert to base64 for API
+                    buffered = io.BytesIO()
+                    image_part.save(buffered, format="PNG")
+                    image_base64 = base64.b64encode(buffered.getvalue()).decode()
+                else:
+                    print(f"⚠️ Image not found locally, fetching from URL")
+                    image_response = requests.get(image_url, stream=True, timeout=10)
+                    if image_response.status_code == 200:
+                        image_part = Image.open(io.BytesIO(image_response.content))
+                        
+                        # Convert to base64 for API
+                        buffered = io.BytesIO()
+                        image_part.save(buffered, format="PNG")
+                        image_base64 = base64.b64encode(buffered.getvalue()).decode()
+                        print("✅ Image loaded from URL")
+                    else:
+                        print(f"❌ Failed to fetch image: {image_response.status_code}")
+            except Exception as e:
+                print(f"⚠️ Error loading image: {str(e)}")
+                traceback.print_exc()
+                # Continue without image
+        
         platform_content = {}
         
         print(f"🎨 Generating content for {len(selected_platforms)} platforms...")
         
-        # Use Groq for free content generation
-        try:
-            from groq import Groq
+        for platform_id in selected_platforms:
+            platform = next((p for p in PLATFORMS if p['id'] == platform_id), None)
+            if not platform:
+                print(f"⚠️ Platform not found: {platform_id}")
+                continue
             
-            groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
+            print(f"📝 Generating for {platform['name']}...")
             
-            for platform_id in selected_platforms:
-                platform = next((p for p in PLATFORMS if p['id'] == platform_id), None)
-                if not platform:
-                    print(f"⚠️ Platform not found: {platform_id}")
-                    continue
-                
-                print(f"📝 Generating for {platform['name']}...")
-                
-                prompt = f"""You are an expert content creator helping an artisan (Kalakaar) generate engaging social media posts.
+            prompt = f"""You are an expert content creator helping an artisan (Kalakaar) generate engaging social media posts.
 
 Create a compelling and authentic {platform['name']} post for the following handcrafted product.
+Analyze the visual details from the image (if provided) and weave them with the textual details below.
 
 --- PRODUCT DETAILS ---
 {product_text}
@@ -1152,50 +1192,52 @@ Requirements:
 - The post must be engaging and encourage comments/shares.
 
 Generate ONLY the post content, nothing else."""
+
+            try:
+                from groq import Groq
                 
-                try:
-                    response = groq_client.chat.completions.create(
-                        model="llama-3.3-70b-versatile",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": "You are an expert social media content creator specializing in handcrafted artisan products. Create engaging, authentic posts that highlight craftsmanship and connect with audiences."
-                            },
-                            {
-                                "role": "user",
-                                "content": prompt
-                            }
-                        ],
-                        max_tokens=1024,
-                        temperature=0.7,
-                        top_p=1
-                    )
-                    
-                    generated_text = response.choices[0].message.content
-                    
-                    platform_content[platform_id] = {
-                        'platform': platform['name'],
-                        'content': generated_text.strip(),
-                        'char_limit': platform['char_limit'],
-                        'format_type': platform['best_for']
-                    }
-                    print(f"✅ Content generated successfully for {platform['name']}")
-                    
-                except Exception as e:
-                    error_msg = str(e)
-                    print(f"❌ Error generating for {platform['name']}: {error_msg}")
-                    traceback.print_exc()
-                    platform_content[platform_id] = {
-                        'platform': platform['name'],
-                        'content': f'Error generating content: {error_msg}',
-                        'char_limit': platform['char_limit'],
-                        'format_type': platform['best_for'],
-                        'error': True
-                    }
-        
-        except ImportError:
-            print("❌ Groq not installed. Install with: pip install groq")
-            return jsonify({'error': 'Content generation service not available'}), 503
+                groq_client = Groq(api_key=os.environ.get('GROQ_API_KEY'))
+                
+                print(f"🚀 Generating content for {platform['name']} using Groq...")
+                
+                response = groq_client.chat.completions.create(
+                    model="llama-3.3-70b-versatile",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert social media content creator specializing in handcrafted artisan products. Create engaging, authentic posts that highlight craftsmanship and connect with audiences."
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    max_tokens=1024,
+                    temperature=0.7,
+                    top_p=1
+                )
+                
+                generated_text = response.choices[0].message.content
+                
+                platform_content[platform_id] = {
+                    'platform': platform['name'],
+                    'content': generated_text.strip(),
+                    'char_limit': platform['char_limit'],
+                    'format_type': platform['best_for']
+                }
+                print(f"✅ Content generated successfully for {platform['name']}")
+                
+            except Exception as e:
+                error_msg = str(e)
+                print(f"❌ Error generating for {platform['name']}: {error_msg}")
+                traceback.print_exc()
+                platform_content[platform_id] = {
+                    'platform': platform['name'],
+                    'content': f'Error generating content: {error_msg}',
+                    'char_limit': platform['char_limit'],
+                    'format_type': platform['best_for'],
+                    'error': True
+                }
 
         print("=" * 60)
         print("✅ CONTENT GENERATION COMPLETE")
@@ -1206,7 +1248,7 @@ Generate ONLY the post content, nothing else."""
             'success': True,
             'platforms': selected_platforms,
             'content': platform_content,
-            'model_used': 'llama-3.3-70b-versatile (Groq - FREE)'
+            'model_used': 'llama-3.3-70b-versatile (Groq)'
         }), 200
 
     except Exception as e:
@@ -1242,27 +1284,12 @@ def internal_error(error):
 
 if __name__ == '__main__':
     print("=" * 50)
-    print("✓ Kalakar AI Backend - Image Enhancement Edition")
+    print("✓ Running in development mode")
     print("=" * 50)
     
     # Get port from environment variable
     port = int(os.environ.get('PORT', 5001))
     print(f"🚀 Server starting on port {port}")
-    
-    # Check for required dependencies
-    try:
-        from rembg import remove
-        print("✓ rembg installed - Background removal available")
-    except ImportError:
-        print("⚠ rembg not installed. Run: pip install rembg")
-    
-    try:
-        from groq import Groq
-        print("✓ groq installed - Content generation available")
-    except ImportError:
-        print("⚠ groq not installed. Run: pip install groq")
-    
-    print("=" * 50)
     
     # For development
     app.run(debug=True, host='0.0.0.0', port=port)
