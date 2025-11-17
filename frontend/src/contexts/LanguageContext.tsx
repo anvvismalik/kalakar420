@@ -70,14 +70,14 @@ const translations: Record<Language, Record<string, string>> = {
     // Studio
     'studio.title': 'Content Creation Studio',
     'studio.tagline': 'Advanced AI translates to perfect English',
-    'studio.hero.title': 'Create Your Content',
-    'studio.hero.subtitle': 'Transform your Punjabi product descriptions into professional English content in three simple steps',
-    'studio.step1.title': 'Step 1: AI Conversation',
-    'studio.step1.desc': 'Describe your product in Punjabi. Speak naturally and clearly.',
-    'studio.step2.title': 'Step 2: Select Platforms',
-    'studio.step2.desc': 'Choose where you want to post.',
-    'studio.step3.title': 'Step 3: Upload & Generate',
-    'studio.step3.desc': 'Add product photo and create content.',
+    // 'studio.hero.title': 'Create Your Content',
+    // 'studio.hero.subtitle': 'Transform your Punjabi product descriptions into professional English content in three simple steps',
+    // 'studio.step1.title': 'Step 1: AI Conversation',
+    // 'studio.step1.desc': 'Describe your product in Punjabi. Speak naturally and clearly.',
+    // 'studio.step2.title': 'Step 2: Select Platforms',
+    // 'studio.step2.desc': 'Choose where you want to post.',
+    // 'studio.step3.title': 'Step 3: Upload & Generate',
+    // 'studio.step3.desc': 'Add product photo and create content.',
     'studio.recording': 'Recording in progress...',
     'studio.clicktostart': 'Click "Start Conversation" to begin.',
     'studio.startConversation': 'Start Conversation',
@@ -179,6 +179,64 @@ const translations: Record<Language, Record<string, string>> = {
     'signup.createPasswordPlaceholder': 'Create a password (min 6 chars)',
     'signup.confirmPasswordPlaceholder': 'Confirm your password',
     'signup.selectCraft': 'Select your craft',
+    'studio.header.title': 'Kalakaar AI',
+  'studio.header.subtitle': 'Content Creation Studio',
+  'studio.header.backHome': 'Back to Home',
+  
+  // Studio Page - Hero
+  'studio.hero.badge': 'AI-Powered Studio',
+  'studio.hero.title': 'Create Your Content',
+  'studio.hero.subtitle': 'Transform your Punjabi product descriptions into professional English content in three simple steps',
+  
+  // Studio Page - Steps
+  'studio.step1.title': 'Step 1: AI Conversation',
+  'studio.step1.desc': 'Describe your product in Punjabi',
+  'studio.step1.ready': 'Ready to start your conversation',
+  'studio.step1.aiSpeaking': 'AI Speaking...',
+  'studio.step1.processing': 'Processing...',
+  'studio.step1.recording': 'Recording...',
+  'studio.step1.startConversation': 'Start Conversation',
+  'studio.step1.stopRecording': 'Stop Recording',
+  'studio.step1.startTalking': 'Start Talking',
+  'studio.step1.replayQuestion': 'Replay Question',
+  
+  'studio.step2.title': 'Step 2: Select Platforms',
+  'studio.step2.desc': 'Choose where you want to post',
+  'studio.step2.selected': 'selected',
+  
+  'studio.step3.title': 'Step 3: Upload & Generate',
+  'studio.step3.desc': 'Add product photo and create content',
+  'studio.step3.selectedFile': 'Selected',
+  'studio.step3.imageUploaded': 'Image uploaded!',
+  'studio.step3.uploading': 'Uploading...',
+  'studio.step3.generating': 'Generating...',
+  'studio.step3.generateContent': 'Generate Content',
+  
+  // Progress
+  'studio.progress.title': 'Conversation Progress',
+  
+  // Image Enhancement
+  'studio.enhance.title': 'Optional: Enhance Image',
+  'studio.enhance.desc': 'Remove background and add professional studio setting (uses 1 Clipdrop credit)',
+  'studio.enhance.button': 'Enhance with AI',
+  'studio.enhance.enhancing': 'Enhancing...',
+  'studio.enhance.ready': 'Enhanced Image Ready',
+  'studio.enhance.applied': 'Professional background applied • Use this for your posts',
+  
+  // Generated Content
+  'studio.generated.title': 'Your Generated Content',
+  'studio.generated.desc': 'Content generated for',
+  'studio.generated.platforms': 'platform(s)',
+  'studio.generated.maxChars': 'Max',
+  'studio.generated.chars': 'chars',
+  'studio.generated.copy': 'Copy Content',
+  'studio.generated.share': 'Share',
+  'studio.generated.createAnother': 'Create Another Product',
+  
+  // Errors & Messages
+  'studio.error.uploadFirst': 'Please upload an image first',
+  'studio.error.selectPlatform': 'Please select at least one platform',
+  'studio.error.startFirst': 'Click "Start Conversation" to begin.',
   },
   pa: {
     // Navigation
@@ -240,14 +298,14 @@ const translations: Record<Language, Record<string, string>> = {
     // Studio
     'studio.title': 'ਸਮੱਗਰੀ ਨਿਰਮਾਣ ਸਟੂਡੀਓ',
     'studio.tagline': 'ਉੱਨਤ AI ਸੰਪੂਰਨ ਅੰਗਰੇਜ਼ੀ ਵਿੱਚ ਅਨੁਵਾਦ ਕਰਦਾ ਹੈ',
-    'studio.hero.title': 'ਆਪਣੀ ਸਮੱਗਰੀ ਬਣਾਓ',
-    'studio.hero.subtitle': 'ਤਿੰਨ ਸਧਾਰਨ ਕਦਮਾਂ ਵਿੱਚ ਆਪਣੇ ਪੰਜਾਬੀ ਉਤਪਾਦ ਵਰਣਨਾਂ ਨੂੰ ਪੇਸ਼ੇਵਰ ਅੰਗਰੇਜ਼ੀ ਸਮੱਗਰੀ ਵਿੱਚ ਬਦਲੋ',
-    'studio.step1.title': 'ਕਦਮ 1: AI ਗੱਲਬਾਤ',
-    'studio.step1.desc': 'ਪੰਜਾਬੀ ਵਿੱਚ ਆਪਣੇ ਉਤਪਾਦ ਦਾ ਵਰਣਨ ਕਰੋ। ਸੁਭਾਵਿਕ ਅਤੇ ਸਪੱਸ਼ਟ ਬੋਲੋ।',
-    'studio.step2.title': 'ਕਦਮ 2: ਪਲੇਟਫਾਰਮ ਚੁਣੋ',
-    'studio.step2.desc': 'ਸੋਸ਼ਲ ਮੀਡੀਆ ਪੋਸਟਾਂ ਲਈ ਆਪਣੇ ਉਤਪਾਦ ਦੀ ਫੋਟੋ ਅੱਪਲੋਡ ਕਰੋ (ਵਿਕਲਪਿਕ)।',
-    'studio.step3.title': 'ਕਦਮ 3: ਅੱਪਲੋਡ ਅਤੇ ਬਣਾਓ',
-    'studio.step3.desc': 'ਆਪਣੇ ਵਰਣਨ ਨੂੰ ਪੇਸ਼ੇਵਰ ਸੋਸ਼ਲ ਮੀਡੀਆ ਸਮੱਗਰੀ ਵਿੱਚ ਬਦਲੋ',
+    // 'studio.hero.title': 'ਆਪਣੀ ਸਮੱਗਰੀ ਬਣਾਓ',
+    // 'studio.hero.subtitle': 'ਤਿੰਨ ਸਧਾਰਨ ਕਦਮਾਂ ਵਿੱਚ ਆਪਣੇ ਪੰਜਾਬੀ ਉਤਪਾਦ ਵਰਣਨਾਂ ਨੂੰ ਪੇਸ਼ੇਵਰ ਅੰਗਰੇਜ਼ੀ ਸਮੱਗਰੀ ਵਿੱਚ ਬਦਲੋ',
+    // 'studio.step1.title': 'ਕਦਮ 1: AI ਗੱਲਬਾਤ',
+    // 'studio.step1.desc': 'ਪੰਜਾਬੀ ਵਿੱਚ ਆਪਣੇ ਉਤਪਾਦ ਦਾ ਵਰਣਨ ਕਰੋ। ਸੁਭਾਵਿਕ ਅਤੇ ਸਪੱਸ਼ਟ ਬੋਲੋ।',
+    // 'studio.step2.title': 'ਕਦਮ 2: ਪਲੇਟਫਾਰਮ ਚੁਣੋ',
+    // 'studio.step2.desc': 'ਸੋਸ਼ਲ ਮੀਡੀਆ ਪੋਸਟਾਂ ਲਈ ਆਪਣੇ ਉਤਪਾਦ ਦੀ ਫੋਟੋ ਅੱਪਲੋਡ ਕਰੋ (ਵਿਕਲਪਿਕ)।',
+    // 'studio.step3.title': 'ਕਦਮ 3: ਅੱਪਲੋਡ ਅਤੇ ਬਣਾਓ',
+    // 'studio.step3.desc': 'ਆਪਣੇ ਵਰਣਨ ਨੂੰ ਪੇਸ਼ੇਵਰ ਸੋਸ਼ਲ ਮੀਡੀਆ ਸਮੱਗਰੀ ਵਿੱਚ ਬਦਲੋ',
     'studio.recording': 'ਰਿਕਾਰਡਿੰਗ ਜਾਰੀ ਹੈ...',
     'studio.clicktostart': 'ਗੱਲਬਾਤ ਸ਼ੁਰੂ ਕਰਨ ਲਈ ਕਲਿੱਕ ਕਰੋ।',
     'studio.startConversation': 'ਗੱਲਬਾਤ ਸ਼ੁਰੂ ਕਰੋ',
@@ -349,6 +407,65 @@ const translations: Record<Language, Record<string, string>> = {
     'signup.createPasswordPlaceholder': 'ਇੱਕ ਪਾਸਵਰਡ ਬਣਾਓ (ਘੱਟੋ-ਘੱਟ 6 ਅੱਖਰ)',
     'signup.confirmPasswordPlaceholder': 'ਆਪਣੇ ਪਾਸਵਰਡ ਦੀ ਪੁਸ਼ਟੀ ਕਰੋ',
     'signup.selectCraft': 'ਆਪਣੇ ਦਸਤਕਾਰੀ ਦੀ ਚੋਣ ਕਰੋ',
+
+    'studio.header.title': 'ਕਲਾਕਾਰ AI',
+  'studio.header.subtitle': 'ਸਮੱਗਰੀ ਨਿਰਮਾਣ ਸਟੂਡੀਓ',
+  'studio.header.backHome': 'ਹੋਮ ਤੇ ਵਾਪਸ',
+  
+  // Studio Page - Hero
+  'studio.hero.badge': 'AI-ਸੰਚਾਲਿਤ ਸਟੂਡੀਓ',
+  'studio.hero.title': 'ਆਪਣੀ ਸਮੱਗਰੀ ਬਣਾਓ',
+  'studio.hero.subtitle': 'ਤਿੰਨ ਸਧਾਰਨ ਕਦਮਾਂ ਵਿੱਚ ਆਪਣੇ ਪੰਜਾਬੀ ਉਤਪਾਦ ਵਰਣਨਾਂ ਨੂੰ ਪੇਸ਼ੇਵਰ ਅੰਗਰੇਜ਼ੀ ਸਮੱਗਰੀ ਵਿੱਚ ਬਦਲੋ',
+  
+  // Studio Page - Steps
+  'studio.step1.title': 'ਕਦਮ 1: AI ਗੱਲਬਾਤ',
+  'studio.step1.desc': 'ਪੰਜਾਬੀ ਵਿੱਚ ਆਪਣੇ ਉਤਪਾਦ ਦਾ ਵਰਣਨ ਕਰੋ',
+  'studio.step1.ready': 'ਗੱਲਬਾਤ ਸ਼ੁਰੂ ਕਰਨ ਲਈ ਤਿਆਰ',
+  'studio.step1.aiSpeaking': 'AI ਬੋਲ ਰਿਹਾ ਹੈ...',
+  'studio.step1.processing': 'ਪ੍ਰੋਸੈਸ ਹੋ ਰਿਹਾ ਹੈ...',
+  'studio.step1.recording': 'ਰਿਕਾਰਡਿੰਗ ਜਾਰੀ ਹੈ...',
+  'studio.step1.startConversation': 'ਗੱਲਬਾਤ ਸ਼ੁਰੂ ਕਰੋ',
+  'studio.step1.stopRecording': 'ਰਿਕਾਰਡਿੰਗ ਬੰਦ ਕਰੋ',
+  'studio.step1.startTalking': 'ਬੋਲਣਾ ਸ਼ੁਰੂ ਕਰੋ',
+  'studio.step1.replayQuestion': 'ਸਵਾਲ ਦੁਹਰਾਓ',
+  
+  'studio.step2.title': 'ਕਦਮ 2: ਪਲੇਟਫਾਰਮ ਚੁਣੋ',
+  'studio.step2.desc': 'ਚੁਣੋ ਕਿ ਤੁਸੀਂ ਕਿੱਥੇ ਪੋਸਟ ਕਰਨਾ ਚਾਹੁੰਦੇ ਹੋ',
+  'studio.step2.selected': 'ਚੁਣਿਆ ਗਿਆ',
+  
+  'studio.step3.title': 'ਕਦਮ 3: ਅੱਪਲੋਡ ਅਤੇ ਬਣਾਓ',
+  'studio.step3.desc': 'ਉਤਪਾਦ ਦੀ ਫੋਟੋ ਸ਼ਾਮਲ ਕਰੋ ਅਤੇ ਸਮੱਗਰੀ ਬਣਾਓ',
+  'studio.step3.selectedFile': 'ਚੁਣੀ ਗਈ',
+  'studio.step3.imageUploaded': 'ਤਸਵੀਰ ਅੱਪਲੋਡ ਹੋ ਗਈ!',
+  'studio.step3.uploading': 'ਅੱਪਲੋਡ ਹੋ ਰਿਹਾ ਹੈ...',
+  'studio.step3.generating': 'ਬਣਾਇਆ ਜਾ ਰਿਹਾ ਹੈ...',
+  'studio.step3.generateContent': 'ਸਮੱਗਰੀ ਬਣਾਓ',
+  
+  // Progress
+  'studio.progress.title': 'ਗੱਲਬਾਤ ਦੀ ਪ੍ਰਗਤੀ',
+  
+  // Image Enhancement
+  'studio.enhance.title': 'ਵਿਕਲਪਿਕ: ਤਸਵੀਰ ਨੂੰ ਬਿਹਤਰ ਬਣਾਓ',
+  'studio.enhance.desc': 'ਬੈਕਗ੍ਰਾਉਂਡ ਹਟਾਓ ਅਤੇ ਪੇਸ਼ੇਵਰ ਸਟੂਡੀਓ ਸੈਟਿੰਗ ਸ਼ਾਮਲ ਕਰੋ (1 Clipdrop ਕ੍ਰੈਡਿਟ ਵਰਤਦਾ ਹੈ)',
+  'studio.enhance.button': 'AI ਨਾਲ ਬਿਹਤਰ ਬਣਾਓ',
+  'studio.enhance.enhancing': 'ਬਿਹਤਰ ਬਣਾਇਆ ਜਾ ਰਿਹਾ ਹੈ...',
+  'studio.enhance.ready': 'ਬਿਹਤਰ ਤਸਵੀਰ ਤਿਆਰ ਹੈ',
+  'studio.enhance.applied': 'ਪੇਸ਼ੇਵਰ ਬੈਕਗ੍ਰਾਉਂਡ ਲਾਗੂ ਕੀਤਾ ਗਿਆ • ਆਪਣੀਆਂ ਪੋਸਟਾਂ ਲਈ ਇਸਦੀ ਵਰਤੋਂ ਕਰੋ',
+  
+  // Generated Content
+  'studio.generated.title': 'ਤੁਹਾਡੀ ਬਣਾਈ ਗਈ ਸਮੱਗਰੀ',
+  'studio.generated.desc': 'ਲਈ ਸਮੱਗਰੀ ਬਣਾਈ ਗਈ',
+  'studio.generated.platforms': 'ਪਲੇਟਫਾਰਮ',
+  'studio.generated.maxChars': 'ਅਧਿਕਤਮ',
+  'studio.generated.chars': 'ਅੱਖਰ',
+  'studio.generated.copy': 'ਸਮੱਗਰੀ ਕਾਪੀ ਕਰੋ',
+  'studio.generated.share': 'ਸਾਂਝਾ ਕਰੋ',
+  'studio.generated.createAnother': 'ਇੱਕ ਹੋਰ ਉਤਪਾਦ ਬਣਾਓ',
+  
+  // Errors & Messages
+  'studio.error.uploadFirst': 'ਕਿਰਪਾ ਕਰਕੇ ਪਹਿਲਾਂ ਇੱਕ ਤਸਵੀਰ ਅੱਪਲੋਡ ਕਰੋ',
+  'studio.error.selectPlatform': 'ਕਿਰਪਾ ਕਰਕੇ ਘੱਟੋ-ਘੱਟ ਇੱਕ ਪਲੇਟਫਾਰਮ ਚੁਣੋ',
+  'studio.error.startFirst': 'ਗੱਲਬਾਤ ਸ਼ੁਰੂ ਕਰਨ ਲਈ "ਗੱਲਬਾਤ ਸ਼ੁਰੂ ਕਰੋ" ਤੇ ਕਲਿੱਕ ਕਰੋ',
   },
   hi: {
     // Navigation
@@ -400,14 +517,14 @@ const translations: Record<Language, Record<string, string>> = {
     // Studio
     'studio.title': 'सामग्री निर्माण स्टूडियो',
     'studio.tagline': 'उन्नत AI पूर्ण अंग्रेजी में अनुवाद करता है',
-    'studio.hero.title': 'अपनी सामग्री बनाएं',
-    'studio.hero.subtitle': 'तीन सरल चरणों में अपने पंजाबी उत्पाद विवरणों को पेशेवर अंग्रेजी सामग्री में बदलें',
-    'studio.step1.title': 'चरण 1: AI वार्तालाप',
-    'studio.step1.desc': 'पंजाबी में अपने उत्पाद का वर्णन करें। स्वाभाविक और स्पष्ट रूप से बोलें।',
-    'studio.step2.title': 'चरण 2: प्लेटफ़ॉर्म चुनें',
-    'studio.step2.desc': 'सोशल मीडिया पोस्ट के लिए अपने उत्पाद की फोटो अपलोड करें (वैकल्पिक)।',
-    'studio.step3.title': 'चरण 3: अपलोड और निर्माण',
-    'studio.step3.desc': 'अपने विवरण को पेशेवर सोशल मीडिया सामग्री में बदलें',
+    // 'studio.hero.title': 'अपनी सामग्री बनाएं',
+    // 'studio.hero.subtitle': 'तीन सरल चरणों में अपने पंजाबी उत्पाद विवरणों को पेशेवर अंग्रेजी सामग्री में बदलें',
+    // 'studio.step1.title': 'चरण 1: AI वार्तालाप',
+    // 'studio.step1.desc': 'पंजाबी में अपने उत्पाद का वर्णन करें। स्वाभाविक और स्पष्ट रूप से बोलें।',
+    // 'studio.step2.title': 'चरण 2: प्लेटफ़ॉर्म चुनें',
+    // 'studio.step2.desc': 'सोशल मीडिया पोस्ट के लिए अपने उत्पाद की फोटो अपलोड करें (वैकल्पिक)।',
+    // 'studio.step3.title': 'चरण 3: अपलोड और निर्माण',
+    // 'studio.step3.desc': 'अपने विवरण को पेशेवर सोशल मीडिया सामग्री में बदलें',
     'studio.recording': 'रिकॉर्डिंग जारी है...',
     'studio.clicktostart': 'बातचीत शुरू करने के लिए क्लिक करें।',
     'studio.startConversation': 'बातचीत शुरू करें',
@@ -509,6 +626,66 @@ const translations: Record<Language, Record<string, string>> = {
     'signup.createPasswordPlaceholder': 'एक पासवर्ड बनाएं (न्यूनतम 6 अक्षर)',
     'signup.confirmPasswordPlaceholder': 'अपने पासवर्ड की पुष्टि करें',
     'signup.selectCraft': 'अपने शिल्प का चयन करें',
+
+    'studio.header.title': 'कलाकार AI',
+  'studio.header.subtitle': 'सामग्री निर्माण स्टूडियो',
+  'studio.header.backHome': 'होम पर वापस',
+  
+  // Studio Page - Hero
+  'studio.hero.badge': 'AI-संचालित स्टूडियो',
+  'studio.hero.title': 'अपनी सामग्री बनाएं',
+  'studio.hero.subtitle': 'तीन सरल चरणों में अपने पंजाबी उत्पाद विवरणों को पेशेवर अंग्रेजी सामग्री में बदलें',
+  
+  // Studio Page - Steps
+  'studio.step1.title': 'चरण 1: AI वार्तालाप',
+  'studio.step1.desc': 'पंजाबी में अपने उत्पाद का वर्णन करें',
+  'studio.step1.ready': 'बातचीत शुरू करने के लिए तैयार',
+  'studio.step1.aiSpeaking': 'AI बोल रहा है...',
+  'studio.step1.processing': 'प्रोसेस हो रहा है...',
+  'studio.step1.recording': 'रिकॉर्डिंग जारी है...',
+  'studio.step1.startConversation': 'बातचीत शुरू करें',
+  'studio.step1.stopRecording': 'रिकॉर्डिंग बंद करें',
+  'studio.step1.startTalking': 'बोलना शुरू करें',
+  'studio.step1.replayQuestion': 'प्रश्न दोहराएं',
+  
+  'studio.step2.title': 'चरण 2: प्लेटफ़ॉर्म चुनें',
+  'studio.step2.desc': 'चुनें कि आप कहां पोस्ट करना चाहते हैं',
+  'studio.step2.selected': 'चयनित',
+  
+  'studio.step3.title': 'चरण 3: अपलोड और निर्माण',
+  'studio.step3.desc': 'उत्पाद की फोटो जोड़ें और सामग्री बनाएं',
+  'studio.step3.selectedFile': 'चयनित',
+  'studio.step3.imageUploaded': 'छवि अपलोड हो गई!',
+  'studio.step3.uploading': 'अपलोड हो रहा है...',
+  'studio.step3.generating': 'बनाया जा रहा है...',
+  'studio.step3.generateContent': 'सामग्री बनाएं',
+  
+  // Progress
+  'studio.progress.title': 'बातचीत की प्रगति',
+  
+  // Image Enhancement
+  'studio.enhance.title': 'वैकल्पिक: छवि बेहतर बनाएं',
+  'studio.enhance.desc': 'बैकग्राउंड हटाएं और पेशेवर स्टूडियो सेटिंग जोड़ें (1 Clipdrop क्रेडिट का उपयोग करता है)',
+  'studio.enhance.button': 'AI से बेहतर बनाएं',
+  'studio.enhance.enhancing': 'बेहतर बनाया जा रहा है...',
+  'studio.enhance.ready': 'बेहतर छवि तैयार है',
+  'studio.enhance.applied': 'पेशेवर बैकग्राउंड लागू किया गया • अपनी पोस्ट के लिए इसका उपयोग करें',
+  
+  // Generated Content
+  'studio.generated.title': 'आपकी बनाई गई सामग्री',
+  'studio.generated.desc': 'के लिए सामग्री बनाई गई',
+  'studio.generated.platforms': 'प्लेटफ़ॉर्म',
+  'studio.generated.maxChars': 'अधिकतम',
+  'studio.generated.chars': 'अक्षर',
+  'studio.generated.copy': 'सामग्री कॉपी करें',
+  'studio.generated.share': 'साझा करें',
+  'studio.generated.createAnother': 'एक और उत्पाद बनाएं',
+  
+  // Errors & Messages
+  'studio.error.uploadFirst': 'कृपया पहले एक छवि अपलोड करें',
+  'studio.error.selectPlatform': 'कृपया कम से कम एक प्लेटफ़ॉर्म चुनें',
+  'studio.error.startFirst': 'बातचीत शुरू करने के लिए "बातचीत शुरू करें" पर क्लिक करें',
+
   },
 };
 
