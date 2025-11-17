@@ -752,7 +752,8 @@ import {
   Star,
   ArrowLeft,
   CheckCircle,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Languages
 } from "lucide-react";
 import { Button } from '@/components/ui/button'; 
 import { Input } from '@/components/ui/input';
@@ -760,7 +761,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useMicrophoneRecorder } from '@/hooks/useMicrophoneRecorder';
-import { useLanguage } from '@/contexts/LanguageContext';
+import { useLanguage, Language } from '@/contexts/LanguageContext';
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const API_BASE_URL = 'https://kalakar420.onrender.com/api';
 
@@ -793,7 +801,7 @@ interface Platform {
 }
 
 const Studio: React.FC = () => {
-    const { t } = useLanguage();
+    const { t, language, setLanguage } = useLanguage();
     
     // --- Auth State ---
     const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -1121,12 +1129,28 @@ const Studio: React.FC = () => {
                             </div>
                         </Link>
                     </div>
-                    <Link to="/">
-                        <Button variant="outline">
-                            <ArrowLeft className="w-4 h-4 mr-2" />
-                            {t('nav.backToHome')}
-                        </Button>
-                    </Link>
+                    
+                    <div className="flex items-center gap-3">
+                        {/* Language Switcher */}
+                        <Select value={language} onValueChange={(value) => setLanguage(value as Language)}>
+                            <SelectTrigger className="w-[140px]">
+                                <Languages className="w-4 h-4 mr-2" />
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="en">English</SelectItem>
+                                <SelectItem value="pa">ਪੰਜਾਬੀ</SelectItem>
+                                <SelectItem value="hi">हिंदी</SelectItem>
+                            </SelectContent>
+                        </Select>
+                        
+                        <Link to="/">
+                            <Button variant="outline">
+                                <ArrowLeft className="w-4 h-4 mr-2" />
+                                {t('nav.backToHome')}
+                            </Button>
+                        </Link>
+                    </div>
                 </div>
             </header>
 
