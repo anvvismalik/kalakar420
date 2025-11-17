@@ -595,7 +595,11 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
             return None
         
         no_bg_image = remove_bg_response.content
-        print("[CLIPDROP] ✓ Background removed")
+        print(f"[CLIPDROP] ✓ Background removed, size: {len(no_bg_image)} bytes")
+        
+        # Free memory
+        del remove_bg_response
+        del image_data
         
         # Get product context
         craft_type = "handcrafted product"
@@ -620,10 +624,11 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
             try:
                 print(f"[CLIPDROP] Creating variant {idx + 1}/{num_variants}...")
                 
+                # Use a copy of no_bg_image to avoid memory issues
                 replace_bg_response = requests.post(
                     'https://clipdrop-api.co/replace-background/v1',
                     files={
-                        'image_file': ('image.png', no_bg_image, 'image/png')
+                        'image_file': ('image.png', io.BytesIO(no_bg_image), 'image/png')
                     },
                     data={
                         'prompt': prompt
@@ -632,13 +637,29 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
                     timeout=30
                 )
                 
+                print(f"[CLIPDROP] Replace BG Status: {replace_bg_response.status_code}")
+                
                 if replace_bg_response.status_code == 200:
                     timestamp = int(time.time())
-                    filename = f"enhanced_{timestamp}_variant{idx + 1}.png"
+                    # Add microseconds to ensure unique filenames
+                    import random
+                    filename = f"enhanced_{timestamp}_{random.randint(1000,9999)}_v{idx + 1}.png"
+                    
+                    # Ensure directory exists
+                    os.makedirs(app.config['ENHANCED_IMAGES_FOLDER'], exist_ok=True)
+                    
                     output_path = os.path.join(app.config['ENHANCED_IMAGES_FOLDER'], filename)
                     
+                    print(f"[CLIPDROP] Saving to: {output_path}")
+                    
+                    # Write file
                     with open(output_path, 'wb') as out_file:
                         out_file.write(replace_bg_response.content)
+                    
+                    # Verify file was saved
+                    if not os.path.exists(output_path):
+                        print(f"[CLIPDROP] ⚠️ File not saved: {output_path}")
+                        continue
                     
                     file_size = os.path.getsize(output_path)
                     base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
@@ -653,17 +674,25 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
                         'method': 'clipdrop_variant'
                     })
                     
-                    print(f"[CLIPDROP] ✓ Variant {idx + 1} created")
+                    print(f"[CLIPDROP] ✓ Variant {idx + 1} created: {filename} ({file_size} bytes)")
                 else:
                     print(f"[CLIPDROP] Variant {idx + 1} failed: {replace_bg_response.status_code}")
+                    print(f"[CLIPDROP] Error: {replace_bg_response.text[:200]}")
+                
+                # Free memory immediately after each variant
+                del replace_bg_response
                 
                 # Rate limiting delay
                 if idx < num_variants - 1:
-                    time.sleep(1)
+                    time.sleep(1.5)
                     
             except Exception as e:
                 print(f"[CLIPDROP] Error creating variant {idx + 1}: {str(e)}")
+                traceback.print_exc()
                 continue
+        
+        # Free memory
+        del no_bg_image
         
         if enhanced_images:
             print(f"[CLIPDROP] Successfully created {len(enhanced_images)} variants")
@@ -902,12 +931,21 @@ def respond_to_conversation():
 
 # ==================== IMAGE ENHANCEMENT ENDPOINT ====================
 
-@app.route('/api/enhance-image', methods=['POST'])
+@app.route('/api/enhance-image', methods=['POST', 'OPTIONS'])
 def enhance_product_image():
     """
     ROUTE ENDPOINT - Enhance product image using Clipdrop API
     Accepts image_url in JSON, reads from local filesystem
     """
+    # Handle preflight OPTIONS request
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization, Cookie, X-Requested-With')
+        response.headers.add('Access-Control-Allow-Credentials', 'true')
+        return response, 200
+    
     try:
         print("=" * 60)
         print("🖼️ ENHANCE IMAGE REQUEST RECEIVED")
@@ -929,7 +967,7 @@ def enhance_product_image():
         image_url = data.get('image_url')
         session_id = data.get('session_id')
         create_variants = data.get('create_variants', True)
-        num_variants = int(data.get('num_variants', 3))
+        num_variants = min(int(data.get('num_variants', 3)), 3)  # Cap at 3 to prevent memory issues
         
         print(f"📦 Request: image_url={image_url}, session={session_id}")
         
@@ -937,7 +975,6 @@ def enhance_product_image():
             return jsonify({'error': 'image_url required', 'success': False}), 400
         
         # Extract filename from URL and construct local path
-        # URL format: http://domain/uploads/filename.jpg
         filename = os.path.basename(image_url)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
@@ -951,7 +988,16 @@ def enhance_product_image():
                 'success': False
             }), 404
         
-        print(f"✅ File found: {filepath}")
+        # Check file size to prevent OOM
+        file_size = os.path.getsize(filepath)
+        print(f"✅ File found: {filepath} ({file_size} bytes)")
+        
+        if file_size > 10 * 1024 * 1024:  # 10MB limit
+            return jsonify({
+                'error': 'Image file too large',
+                'details': 'Maximum file size is 10MB',
+                'success': False
+            }), 400
         
         # Get product info if session_id provided
         product_info = None
@@ -984,7 +1030,7 @@ def enhance_product_image():
         if not enhanced_images:
             return jsonify({
                 'error': 'Image enhancement failed',
-                'details': 'Could not process image. Check server logs.',
+                'details': 'Could not process image. Check server logs for Clipdrop API errors.',
                 'success': False
             }), 500
         
