@@ -15,10 +15,21 @@ import traceback
 from PIL import Image 
 import base64
 from sqlalchemy.engine.url import make_url
+import uuid 
 # --- GOOGLE CLOUD IMPORTS ---
 from google.cloud import speech
 from google.cloud import texttospeech
 from google.oauth2 import service_account
+
+# Optional: Imagen API (requires google-cloud-aiplatform)
+# NOTE: This block is kept but Image Generation is disabled due to 403 errors.
+try:
+    from google.cloud import aiplatform
+    from vertexai.preview.vision_models import ImageGenerationModel
+    IMAGEN_AVAILABLE = True
+except ImportError:
+    IMAGEN_AVAILABLE = False
+
 
 # Load environment variables
 load_dotenv(find_dotenv())
@@ -70,7 +81,7 @@ else:
 # Translation API Key
 TRANSLATION_API_KEY = os.getenv("TRANSLATION_API_KEY")
 
-# CLIPDROP API Configuration
+# Configure Clipdrop API
 CLIPDROP_API_KEY = os.getenv("CLIPDROP_API_KEY")
 CLIPDROP_AVAILABLE = bool(CLIPDROP_API_KEY)
 
@@ -78,6 +89,7 @@ if CLIPDROP_AVAILABLE:
     print("✓ Clipdrop API configured")
 else:
     print("⚠ Clipdrop API key not found. Set CLIPDROP_API_KEY in environment variables")
+
 
 app = Flask(__name__)
 
@@ -124,10 +136,11 @@ app.config['PERMANENT_SESSION_LIFETIME'] = 86400
 # File Upload Configuration
 UPLOAD_FOLDER = 'uploads'
 AUDIO_FOLDER = 'audio_responses'
-ENHANCED_IMAGES_FOLDER = 'enhanced_images'  # Changed from generated_images
+ENHANCED_IMAGES_FOLDER = 'enhanced_images'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 MAX_FILE_SIZE = 50 * 1024 * 1024  
 
+# Configure CORS (Updated from user's last provided file)
 CORS(app, 
      supports_credentials=True,
      origins=[
@@ -154,13 +167,13 @@ app.config['AUDIO_FOLDER'] = AUDIO_FOLDER
 app.config['ENHANCED_IMAGES_FOLDER'] = ENHANCED_IMAGES_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 
-# Configure Google Gemini API
+# Configure Google Gemini API (still needed for context in content generation)
 genai.configure(api_key=os.environ.get('GEMINI_API_KEY'))
 
 # Initialize Database
 db = SQLAlchemy(app)
 
-# ==================== DATABASE MODELS ====================
+# ==================== DATABASE MODELS (Unchanged) ====================
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -202,7 +215,7 @@ class Content(db.Model):
     image_url = db.Column(db.String(255))
     generated_description = db.Column(db.Text)
     generated_captions = db.Column(db.Text)
-    enhanced_images = db.Column(db.Text)  # Store enhanced image URLs
+    enhanced_images = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -241,7 +254,7 @@ class Conversation(db.Model):
         }
 
 
-# ==================== DATABASE INITIALIZATION ====================
+# ==================== DATABASE INITIALIZATION (Unchanged) ====================
 
 def init_database():
     """Initialize database tables - creates all tables on startup"""
@@ -274,7 +287,7 @@ def init_database():
 init_database()
 
 
-# ==================== PLATFORM CONFIGURATION ====================
+# ==================== PLATFORM CONFIGURATION (Unchanged) ====================
 PLATFORMS = [
     {
         "id": "instagram",
@@ -319,7 +332,7 @@ PLATFORMS = [
 ]
 
 
-# ==================== CONVERSATION FLOW ====================
+# ==================== CONVERSATION FLOW (Unchanged) ====================
 CONVERSATION_FLOW = [
     {
         "step": "greeting",
@@ -445,14 +458,13 @@ def text_to_speech_punjabi(text, output_filename):
         return None
 
 
-# ==================== CLIPDROP IMAGE ENHANCEMENT ====================
+# ==================== CLIPDROP IMAGE ENHANCEMENT HELPERS ====================
 
 def enhance_image_with_clipdrop(image_path, product_info=None):
     """
     Enhance product image using Clipdrop APIs:
     1. Remove background
     2. Replace with professional background
-    3. Optional: Improve lighting
     
     Returns: dict with enhanced image info or None if failed
     """
@@ -467,12 +479,8 @@ def enhance_image_with_clipdrop(image_path, product_info=None):
         with open(image_path, 'rb') as img_file:
             image_data = img_file.read()
         
-        print(f"[CLIPDROP] Image size: {len(image_data)} bytes")
-        
         # Step 1: Remove Background
         print("[CLIPDROP] Step 1: Removing background...")
-        print(f"[CLIPDROP] API Key configured: {bool(CLIPDROP_API_KEY)}")
-        
         remove_bg_response = requests.post(
             'https://clipdrop-api.co/remove-background/v1',
             files={'image_file': ('image.jpg', image_data, 'image/jpeg')},
@@ -480,12 +488,9 @@ def enhance_image_with_clipdrop(image_path, product_info=None):
             timeout=30
         )
         
-        print(f"[CLIPDROP] Response status: {remove_bg_response.status_code}")
-        print(f"[CLIPDROP] Response headers: {dict(remove_bg_response.headers)}")
-        
         if remove_bg_response.status_code != 200:
             print(f"[CLIPDROP] Background removal failed: {remove_bg_response.status_code}")
-            print(f"[CLIPDROP] Response body: {remove_bg_response.text}")
+            print(f"[CLIPDROP] Response: {remove_bg_response.text}")
             return None
         
         no_bg_image = remove_bg_response.content
@@ -499,7 +504,7 @@ def enhance_image_with_clipdrop(image_path, product_info=None):
         if product_info:
             craft_info = product_info.get('craft_type', {})
             if isinstance(craft_info, dict):
-                craft_type = craft_info.get('english', craft_type)
+                craft_type = craft_info.get('english', craft_info)
             else:
                 craft_type = str(craft_info)
         
@@ -530,6 +535,9 @@ def enhance_image_with_clipdrop(image_path, product_info=None):
         timestamp = int(time.time())
         filename = f"enhanced_{timestamp}_{os.path.basename(image_path)}"
         output_path = os.path.join(app.config['ENHANCED_IMAGES_FOLDER'], filename)
+        
+        # FIX 3: Ensure directory exists before saving the file
+        os.makedirs(app.config['ENHANCED_IMAGES_FOLDER'], exist_ok=True)
         
         with open(output_path, 'wb') as out_file:
             out_file.write(enhanced_image)
@@ -571,13 +579,8 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
         with open(image_path, 'rb') as img_file:
             image_data = img_file.read()
         
-        print(f"[CLIPDROP] Image size: {len(image_data)} bytes")
-        
         # Step 1: Remove Background (do this once)
         print("[CLIPDROP] Removing background...")
-        print(f"[CLIPDROP] API Key present: {bool(CLIPDROP_API_KEY)}")
-        print(f"[CLIPDROP] API Key length: {len(CLIPDROP_API_KEY) if CLIPDROP_API_KEY else 0}")
-        
         remove_bg_response = requests.post(
             'https://clipdrop-api.co/remove-background/v1',
             files={'image_file': ('image.jpg', image_data, 'image/jpeg')},
@@ -585,28 +588,19 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
             timeout=30
         )
         
-        print(f"[CLIPDROP] Remove BG Response Status: {remove_bg_response.status_code}")
-        print(f"[CLIPDROP] Remove BG Response Headers: {dict(remove_bg_response.headers)}")
-        print(f"[CLIPDROP] Remove BG Response Body: {remove_bg_response.text[:500]}")
-        
         if remove_bg_response.status_code != 200:
-            print(f"[CLIPDROP] Background removal failed: {remove_bg_response.status_code}")
-            print(f"[CLIPDROP] Error details: {remove_bg_response.text}")
+            print(f"[CLIPDROP] Background removal failed")
             return None
         
         no_bg_image = remove_bg_response.content
-        print(f"[CLIPDROP] ✓ Background removed, size: {len(no_bg_image)} bytes")
-        
-        # Free memory
-        del remove_bg_response
-        del image_data
+        print("[CLIPDROP] ✓ Background removed")
         
         # Get product context
         craft_type = "handcrafted product"
         if product_info:
             craft_info = product_info.get('craft_type', {})
             if isinstance(craft_info, dict):
-                craft_type = craft_info.get('english', craft_type)
+                craft_type = craft_info.get('english', craft_info)
             else:
                 craft_type = str(craft_info)
         
@@ -624,7 +618,6 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
             try:
                 print(f"[CLIPDROP] Creating variant {idx + 1}/{num_variants}...")
                 
-                # Use a copy of no_bg_image to avoid memory issues
                 replace_bg_response = requests.post(
                     'https://clipdrop-api.co/replace-background/v1',
                     files={
@@ -637,29 +630,20 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
                     timeout=30
                 )
                 
-                print(f"[CLIPDROP] Replace BG Status: {replace_bg_response.status_code}")
-                
                 if replace_bg_response.status_code == 200:
                     timestamp = int(time.time())
-                    # Add microseconds to ensure unique filenames
+                    # Use random to ensure unique filenames in high concurrency
                     import random
                     filename = f"enhanced_{timestamp}_{random.randint(1000,9999)}_v{idx + 1}.png"
                     
-                    # Ensure directory exists
+                    # FIX 4: Ensure directory exists before saving the file
                     os.makedirs(app.config['ENHANCED_IMAGES_FOLDER'], exist_ok=True)
                     
                     output_path = os.path.join(app.config['ENHANCED_IMAGES_FOLDER'], filename)
                     
-                    print(f"[CLIPDROP] Saving to: {output_path}")
-                    
                     # Write file
                     with open(output_path, 'wb') as out_file:
                         out_file.write(replace_bg_response.content)
-                    
-                    # Verify file was saved
-                    if not os.path.exists(output_path):
-                        print(f"[CLIPDROP] ⚠️ File not saved: {output_path}")
-                        continue
                     
                     file_size = os.path.getsize(output_path)
                     base_url = os.getenv('BASE_URL', 'http://127.0.0.1:5001')
@@ -674,13 +658,9 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
                         'method': 'clipdrop_variant'
                     })
                     
-                    print(f"[CLIPDROP] ✓ Variant {idx + 1} created: {filename} ({file_size} bytes)")
+                    print(f"[CLIPDROP] ✓ Variant {idx + 1} created")
                 else:
                     print(f"[CLIPDROP] Variant {idx + 1} failed: {replace_bg_response.status_code}")
-                    print(f"[CLIPDROP] Error: {replace_bg_response.text[:200]}")
-                
-                # Free memory immediately after each variant
-                del replace_bg_response
                 
                 # Rate limiting delay
                 if idx < num_variants - 1:
@@ -690,9 +670,6 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
                 print(f"[CLIPDROP] Error creating variant {idx + 1}: {str(e)}")
                 traceback.print_exc()
                 continue
-        
-        # Free memory
-        del no_bg_image
         
         if enhanced_images:
             print(f"[CLIPDROP] Successfully created {len(enhanced_images)} variants")
@@ -707,7 +684,7 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
         return None
 
 
-# ==================== ROUTES ====================
+# ==================== ROUTES (Modified) ====================
 
 @app.route('/')
 def home():
@@ -728,14 +705,14 @@ def health_check():
             'speech_to_text': 'active' if speech_client else 'inactive',
             'text_to_speech': 'active' if tts_client else 'inactive',
             'translation': 'active' if TRANSLATION_API_KEY else 'inactive',
-            'gemini_content': 'active',
+            'groq_content': 'active', # Updated
             'clipdrop_enhancement': 'active' if CLIPDROP_AVAILABLE else 'not_configured',
             'database': 'postgresql' if database_url else 'sqlite'
         }
     }), 200
 
 
-# ==================== PLATFORMS ENDPOINT ====================
+# ==================== PLATFORMS ENDPOINT (Unchanged) ====================
 
 @app.route('/api/platforms', methods=['GET'])
 def get_platforms():
@@ -743,7 +720,7 @@ def get_platforms():
     return jsonify({'platforms': PLATFORMS}), 200
 
 
-# ==================== AUTHENTICATION ====================
+# ==================== AUTHENTICATION (Unchanged) ====================
 
 @app.route('/api/signup', methods=['POST'])
 def signup():
@@ -795,7 +772,7 @@ def get_current_user_info():
     return jsonify({'error': 'Not authenticated'}), 401
 
 
-# ==================== CONVERSATION ROUTES ====================
+# ==================== CONVERSATION ROUTES (Fixed session_id) ====================
 
 @app.route('/api/conversation/start', methods=['POST'])
 def start_conversation():
@@ -812,7 +789,8 @@ def start_conversation():
             session['user_id'] = user.id
             session.modified = True
         
-        session_id = f"conv_{user.id}_{int(time.time())}"
+        # FIX 1: Use UUID for guaranteed unique session IDs across multiple workers/restarts
+        session_id = f"conv_{user.id}_{uuid.uuid4().hex}"
         
         conversation = Conversation(
             user_id=user.id,
@@ -925,6 +903,7 @@ def respond_to_conversation():
             'progress': progress
         }), 200
     except Exception as e:
+        db.session.rollback()
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
@@ -935,9 +914,8 @@ def respond_to_conversation():
 def enhance_product_image():
     """
     ROUTE ENDPOINT - Enhance product image using Clipdrop API
-    Accepts image_url in JSON, reads from local filesystem
+    Reads image URL from JSON body, reads from local filesystem.
     """
-    # Handle preflight OPTIONS request
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
         response.headers.add('Access-Control-Allow-Origin', request.headers.get('Origin', '*'))
@@ -962,44 +940,41 @@ def enhance_product_image():
         if not user:
             return jsonify({'error': 'Not authenticated', 'success': False}), 401
         
-        # Get JSON data
         data = request.get_json()
         image_url = data.get('image_url')
         session_id = data.get('session_id')
-        create_variants = data.get('create_variants', False)  # Default to single image
-        num_variants = min(int(data.get('num_variants', 1)), 1)  # Limit to 1 variant to prevent OOM
+        create_variants = data.get('create_variants', False)
+        num_variants = int(data.get('num_variants', 1))
         
         print(f"📦 Request: image_url={image_url}, session={session_id}, variants={num_variants}")
         
         if not image_url:
             return jsonify({'error': 'image_url required', 'success': False}), 400
         
-        # Extract filename from URL and construct local path
-        filename = os.path.basename(image_url)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        # --- FIX: Load image directly from local storage ---
+        
+        # 1. Extract filename and construct local path
+        image_filename = os.path.basename(image_url)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
         
         print(f"📁 Looking for local file: {filepath}")
         
         if not os.path.exists(filepath):
             print(f"❌ File not found: {filepath}")
+            # The previous attempt to download the file timed out. Since the file was originally uploaded
+            # via `/api/upload_image`, it should be in the `uploads` directory. If it's missing,
+            # we must fail, as the external download is unreliable (as demonstrated by your logs).
             return jsonify({
                 'error': 'Image file not found on server',
-                'details': f'File {filename} does not exist',
+                'details': f'File {image_filename} does not exist in uploads. Network access to self failed previously.',
                 'success': False
             }), 404
         
-        # Check file size to prevent OOM
+        # Check file size (optional safety)
         file_size = os.path.getsize(filepath)
         print(f"✅ File found: {filepath} ({file_size} bytes)")
         
-        if file_size > 10 * 1024 * 1024:  # 10MB limit
-            return jsonify({
-                'error': 'Image file too large',
-                'details': 'Maximum file size is 10MB',
-                'success': False
-            }), 400
-        
-        # Get product info if session_id provided
+        # Get product info
         product_info = None
         if session_id:
             conversation = Conversation.query.filter_by(
@@ -1014,7 +989,7 @@ def enhance_product_image():
                 except:
                     print(f"⚠️ Could not parse product info")
         
-        # Enhance the image
+        # Step 2: Enhance the image
         print(f"🎨 Starting enhancement (variants={create_variants}, num={num_variants})")
         
         if create_variants:
@@ -1062,7 +1037,7 @@ def enhance_product_image():
         
         return jsonify({
             'success': True,
-            'original_image': image_url,
+            'original_image_url': image_url,
             'enhanced_images': enhanced_images,
             'count': len(enhanced_images),
             'method': 'clipdrop',
@@ -1209,43 +1184,28 @@ def generate_from_conversation():
         
         # Load image if provided
         image_part = None
-        image_base64 = None
         if image_url:
             try:
                 print(f"🖼️ Loading image from: {image_url}")
+                
+                # FIX: Try loading from local path first (to avoid internal Render network latency)
                 image_filename = os.path.basename(image_url)
+                local_path = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
                 
-                # Check if it's an enhanced image
-                if 'enhanced_images' in image_url:
-                    image_filepath = os.path.join(app.config['ENHANCED_IMAGES_FOLDER'], image_filename)
+                if os.path.exists(local_path):
+                    image_part = Image.open(local_path)
+                    print("✅ Image loaded locally")
                 else:
-                    image_filepath = os.path.join(app.config['UPLOAD_FOLDER'], image_filename)
-                
-                if os.path.exists(image_filepath):
-                    print(f"✅ Image found locally: {image_filepath}")
-                    image_part = Image.open(image_filepath)
-                    
-                    # Convert to base64 for API
-                    buffered = io.BytesIO()
-                    image_part.save(buffered, format="PNG")
-                    image_base64 = base64.b64encode(buffered.getvalue()).decode()
-                else:
-                    print(f"⚠️ Image not found locally, fetching from URL")
+                    # Fallback to external download (slower/flakier)
+                    print(f"⚠️ Image not found locally, falling back to external fetch...")
                     image_response = requests.get(image_url, stream=True, timeout=10)
                     if image_response.status_code == 200:
                         image_part = Image.open(io.BytesIO(image_response.content))
-                        
-                        # Convert to base64 for API
-                        buffered = io.BytesIO()
-                        image_part.save(buffered, format="PNG")
-                        image_base64 = base64.b64encode(buffered.getvalue()).decode()
                         print("✅ Image loaded from URL")
                     else:
                         print(f"❌ Failed to fetch image: {image_response.status_code}")
             except Exception as e:
                 print(f"⚠️ Error loading image: {str(e)}")
-                traceback.print_exc()
-                # Continue without image
         
         platform_content = {}
         
@@ -1284,18 +1244,21 @@ Generate ONLY the post content, nothing else."""
                 
                 print(f"🚀 Generating content for {platform['name']} using Groq...")
                 
+                # --- Groq API Call ---
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "You are an expert social media content creator specializing in handcrafted artisan products. Create engaging, authentic posts that highlight craftsmanship and connect with audiences."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+
                 response = groq_client.chat.completions.create(
                     model="llama-3.3-70b-versatile",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are an expert social media content creator specializing in handcrafted artisan products. Create engaging, authentic posts that highlight craftsmanship and connect with audiences."
-                        },
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
+                    messages=messages,
                     max_tokens=1024,
                     temperature=0.7,
                     top_p=1
@@ -1347,7 +1310,7 @@ Generate ONLY the post content, nothing else."""
         }), 500
 
 
-# ==================== ERROR HANDLERS ====================
+# ==================== ERROR HANDLERS (Unchanged) ====================
 
 @app.errorhandler(404)
 def not_found(error):
@@ -1364,7 +1327,7 @@ def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
 
-# ==================== STARTUP ====================
+# ==================== STARTUP (Unchanged) ====================
 
 if __name__ == '__main__':
     print("=" * 50)
