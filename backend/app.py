@@ -966,10 +966,10 @@ def enhance_product_image():
         data = request.get_json()
         image_url = data.get('image_url')
         session_id = data.get('session_id')
-        create_variants = data.get('create_variants', True)
-        num_variants = min(int(data.get('num_variants', 3)), 3)  # Cap at 3 to prevent memory issues
+        create_variants = data.get('create_variants', False)  # Default to single image
+        num_variants = min(int(data.get('num_variants', 1)), 1)  # Limit to 1 variant to prevent OOM
         
-        print(f"📦 Request: image_url={image_url}, session={session_id}")
+        print(f"📦 Request: image_url={image_url}, session={session_id}, variants={num_variants}")
         
         if not image_url:
             return jsonify({'error': 'image_url required', 'success': False}), 400
