@@ -719,6 +719,7 @@
 // export default Studio;
 
 // src/pages/Studio.tsx
+// src/pages/Studio.tsx - COMPLETE VERSION WITH IMAGE ENHANCEMENT
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Link } from "react-router-dom";
 import { 
@@ -732,7 +733,8 @@ import {
   CheckCircle,
   Image as ImageIcon,
   Languages,
-  Share2 // Import Share2 icon
+  Share2,
+  Wand2
 } from "lucide-react";
 import { Button } from '@/components/ui/button'; 
 import { Input } from '@/components/ui/input';
@@ -779,6 +781,15 @@ interface Platform {
     best_for: string;
 }
 
+interface EnhancedImage {
+    url: string;
+    filename: string;
+    size: number;
+    method: string;
+    variant?: number;
+    background_style?: string; 
+}
+
 const Studio: React.FC = () => {
     const { t, language, setLanguage } = useLanguage();
     
@@ -795,6 +806,8 @@ const Studio: React.FC = () => {
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imageUrl, setImageUrl] = useState<string | null>(null);
     const [isUploading, setIsUploading] = useState(false);
+    const [isEnhancingImage, setIsEnhancingImage] = useState(false);
+    const [enhancedImage, setEnhancedImage] = useState<EnhancedImage | null>(null);
 
     const [availablePlatforms, setAvailablePlatforms] = useState<Platform[]>([]);
     const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['instagram', 'facebook']);
@@ -1015,9 +1028,54 @@ const Studio: React.FC = () => {
         }
     };
 
+    const enhanceProductImage = async () => {
+        if (!imageUrl || !sessionId) {
+            setError("Please upload an image first");
+            return;
+        }
+        
+        try {
+            setIsEnhancingImage(true);
+            setError('');
+
+            const response = await fetch(`${API_BASE_URL}/enhance-image`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    image_url: imageUrl,
+                    session_id: sessionId,
+                    create_variants: false,
+                    num_variants: 1
+                })
+            });
+            
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Image enhancement failed');
+            }
+            
+            const enhanceData = await response.json();
+
+            if (enhanceData.success && enhanceData.enhanced_images) {
+                setEnhancedImage(enhanceData.enhanced_images[0]);
+            } else {
+                throw new Error('No enhanced images were created');
+            }
+            
+            setIsEnhancingImage(false);
+
+        } catch (err) {
+            console.error("Image Enhancement Error:", err);
+            setError(err instanceof Error ? err.message : "Failed to enhance image");
+            setIsEnhancingImage(false);
+        }
+    };
+
     // Share handler for image
     const handleShareImage = () => {
-        if (!imageUrl) return;
+        const imageToShare = enhancedImage?.url || imageUrl;
+        if (!imageToShare) return;
         
         const title = `Check out this handcrafted ${collectedInfo?.product_name?.english || 'product'}!`;
         const text = `Beautiful handmade ${collectedInfo?.craft_type?.english || 'craft'} by a skilled artisan.`;
@@ -1027,17 +1085,17 @@ const Studio: React.FC = () => {
             navigator.share({
                 title: title,
                 text: text,
-                url: imageUrl
+                url: imageToShare
             }).catch(error => {
                 if (error.name !== 'AbortError') {
                     console.error('Sharing failed', error);
-                    navigator.clipboard.writeText(imageUrl);
+                    navigator.clipboard.writeText(imageToShare);
                     alert('Image link copied to clipboard!');
                 }
             });
         } else {
             // Fallback: copy to clipboard
-            navigator.clipboard.writeText(imageUrl);
+            navigator.clipboard.writeText(imageToShare);
             alert('Image link copied to clipboard!');
         }
     };
@@ -1052,6 +1110,8 @@ const Studio: React.FC = () => {
         setImageFile(null);
         setImageUrl(null);
         setGeneratedContent(null);
+        setEnhancedImage(null);
+        setIsEnhancingImage(false);
         setSelectedPlatforms(['instagram', 'facebook']);
         setError('');
     };
@@ -1297,6 +1357,71 @@ const Studio: React.FC = () => {
                     </Card>
                 </div>
 
+                {/* Optional: Enhance Image Section */}
+                {imageUrl && !enhancedImage && !generatedContent && (
+                    <Card className="mb-6 border-2 border-purple-500/20">
+                        <CardHeader className="bg-purple-500/5">
+                            <CardTitle className="flex items-center gap-2">
+                                <Wand2 className="w-5 h-5 text-purple-500" />
+                                <span className="text-lg">Optional: Enhance Image</span>
+                            </CardTitle>
+                            <CardDescription>
+                                Remove background and add professional studio setting
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <Button
+                                variant="outline"
+                                className="w-full border-purple-500 text-purple-500 hover:bg-purple-500/10"
+                                onClick={enhanceProductImage}
+                                disabled={isEnhancingImage}
+                            >
+                                {isEnhancingImage ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        Enhancing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Wand2 className="w-4 h-4 mr-2" />
+                                        Enhance with AI
+                                    </>
+                                )}
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Show enhanced image if available */}
+                {enhancedImage && (
+                    <Card className="mb-6 border-2 border-purple-500">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <CheckCircle className="w-5 h-5 text-purple-500" />
+                                Enhanced Image Ready
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="rounded-lg overflow-hidden border">
+                                <img src={enhancedImage.url} alt="Enhanced" className="w-full" />
+                            </div>
+                            <p className="text-xs text-muted-foreground text-center">
+                                Professional background applied • Use this for your posts
+                            </p>
+                            {/* Share Button for Enhanced Image */}
+                            <Button
+                                variant="default"
+                                size="lg"
+                                className="w-full bg-primary hover:bg-primary/90 text-white"
+                                onClick={handleShareImage}
+                            >
+                                <Share2 className="w-4 h-4 mr-2" />
+                                Share Enhanced Image
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
+
                 {generatedContent && (
                     <Card className="border-2 shadow-lg">
                         <CardHeader>
@@ -1311,24 +1436,13 @@ const Studio: React.FC = () => {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            {/* Image with Share Button Below */}
+                            {/* Display EITHER the enhanced image OR the original uploaded image */}
                             {imageUrl && (
-                                <div className="space-y-3">
-                                    <div className="rounded-lg overflow-hidden border-2 border-primary/20">
-                                        <img src={imageUrl} alt="Product" className="w-full h-auto max-h-96 object-cover" />
-                                    </div>
-                                    {/* Share Button Below Image */}
-                                    <Button
-                                        variant="default"
-                                        size="lg"
-                                        className="w-full bg-primary hover:bg-primary/90 text-white"
-                                        onClick={handleShareImage}
-                                    >
-                                        <Share2 className="w-4 h-4 mr-2" />
-                                        {t('studio.generated.share') || 'Share Image'}
-                                    </Button>
+                                <div className="rounded-lg overflow-hidden border-2 border-primary/20">
+                                    <img src={enhancedImage?.url || imageUrl} alt="Product" className="w-full h-auto max-h-96 object-cover" />
                                 </div>
                             )}
+
 
                             {/* Platform Content - Only Copy Button */}
                             {Object.entries(generatedContent.content).map(([platformId, platformContent]) => (
