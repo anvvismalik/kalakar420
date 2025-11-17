@@ -370,6 +370,20 @@ CONVERSATION_FLOW = [
         "required": True
     },
     {
+    "step": "cost",
+    "question_en": "What is the price or cost of this product?",
+    "question_pa": "ਇਸ ਉਤਪਾਦ ਦੀ ਕੀਮਤ ਕਿੰਨੀ ਹੈ?",
+    "field": "cost",
+    "required": True
+},
+{
+    "step": "time_taken",
+    "question_en": "How much time did it take you to create this product?",
+    "question_pa": "ਇਸ ਉਤਪਾਦ ਨੂੰ ਬਣਾਉਣ ਵਿੱਚ ਤੁਹਾਨੂੰ ਕਿੰਨਾ ਸਮਾਂ ਲੱਗਾ?",
+    "field": "time_taken",
+    "required": True
+},
+    {
         "step": "completion",
         "question_en": "Perfect! I have all the information. Would you like to upload an image of your product now?",
         "question_pa": "ਸੰਪੂਰਨ! ਮੇਰੇ ਕੋਲ ਸਾਰੀ ਜਾਣਕਾਰੀ ਹੈ। ਕੀ ਤੁਸੀਂ ਹੁਣ ਆਪਣੇ ਉਤਪਾਦ ਦੀ ਤਸਵੀਰ ਅੱਪਲੋਡ ਕਰਨਾ ਚਾਹੋਗੇ?",
@@ -1171,7 +1185,9 @@ def generate_from_conversation():
             ("product_name", "Product Name"),
             ("materials", "Materials"),
             ("process", "Process"),
-            ("special_features", "Special Features")
+            ("special_features", "Special Features"),
+            ("cost", "Price/Cost"),          
+            ("time_taken", "Time to Create")
         ]
         
         for field_key, field_title in fields_to_extract:
