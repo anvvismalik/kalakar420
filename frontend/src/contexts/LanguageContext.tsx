@@ -237,6 +237,10 @@ const translations: Record<Language, Record<string, string>> = {
   'studio.error.uploadFirst': 'Please upload an image first',
   'studio.error.selectPlatform': 'Please select at least one platform',
   'studio.error.startFirst': 'Click "Start Conversation" to begin.',
+   'studio.question.cost': 'What is the price or cost of this product?',
+'studio.question.timeTaken': 'How much time did it take you to create this product?',
+'studio.field.cost': 'Price/Cost',
+'studio.field.timeTaken': 'Time to Create',
   },
   pa: {
     // Navigation
@@ -466,6 +470,10 @@ const translations: Record<Language, Record<string, string>> = {
   'studio.error.uploadFirst': 'ਕਿਰਪਾ ਕਰਕੇ ਪਹਿਲਾਂ ਇੱਕ ਤਸਵੀਰ ਅੱਪਲੋਡ ਕਰੋ',
   'studio.error.selectPlatform': 'ਕਿਰਪਾ ਕਰਕੇ ਘੱਟੋ-ਘੱਟ ਇੱਕ ਪਲੇਟਫਾਰਮ ਚੁਣੋ',
   'studio.error.startFirst': 'ਗੱਲਬਾਤ ਸ਼ੁਰੂ ਕਰਨ ਲਈ "ਗੱਲਬਾਤ ਸ਼ੁਰੂ ਕਰੋ" ਤੇ ਕਲਿੱਕ ਕਰੋ',
+'studio.question.cost': 'ਇਸ ਉਤਪਾਦ ਦੀ ਕੀਮਤ ਕਿੰਨੀ ਹੈ?',
+'studio.question.timeTaken': 'ਇਸ ਉਤਪਾਦ ਨੂੰ ਬਣਾਉਣ ਵਿੱਚ ਤੁਹਾਨੂੰ ਕਿੰਨਾ ਸਮਾਂ ਲੱਗਾ?',
+'studio.field.cost': 'ਕੀਮਤ',
+'studio.field.timeTaken': 'ਬਣਾਉਣ ਵਿੱਚ ਸਮਾਂ',
   },
   hi: {
     // Navigation
@@ -685,6 +693,11 @@ const translations: Record<Language, Record<string, string>> = {
   'studio.error.uploadFirst': 'कृपया पहले एक छवि अपलोड करें',
   'studio.error.selectPlatform': 'कृपया कम से कम एक प्लेटफ़ॉर्म चुनें',
   'studio.error.startFirst': 'बातचीत शुरू करने के लिए "बातचीत शुरू करें" पर क्लिक करें',
+
+  'studio.question.cost': 'इस उत्पाद की कीमत क्या है?',
+'studio.question.timeTaken': 'इस उत्पाद को बनाने में आपको कितना समय लगा?',
+'studio.field.cost': 'कीमत',
+'studio.field.timeTaken': 'बनाने में समय',
 
   },
 };
