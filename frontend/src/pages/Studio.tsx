@@ -1357,71 +1357,68 @@ const Studio: React.FC = () => {
                     </Card>
                 </div>
 
-                {/* Optional: Enhance Image Section */}
-                {imageUrl && !enhancedImage && !generatedContent && (
-                    <Card className="mb-6 border-2 border-purple-500/20">
-                        <CardHeader className="bg-purple-500/5">
-                            <CardTitle className="flex items-center gap-2">
-                                <Wand2 className="w-5 h-5 text-purple-500" />
-                                <span className="text-lg">Optional: Enhance Image</span>
-                            </CardTitle>
-                            <CardDescription>
-                                Remove background and add professional studio setting
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <Button
-                                variant="outline"
-                                className="w-full border-purple-500 text-purple-500 hover:bg-purple-500/10"
-                                onClick={enhanceProductImage}
-                                disabled={isEnhancingImage}
-                            >
-                                {isEnhancingImage ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                                        Enhancing...
-                                    </>
-                                ) : (
-                                    <>
-                                        <Wand2 className="w-4 h-4 mr-2" />
-                                        Enhance with AI
-                                    </>
-                                )}
-                            </Button>
-                        </CardContent>
-                    </Card>
-                )}
-
-                {/* Show enhanced image if available */}
-                {enhancedImage && (
-                    <Card className="mb-6 border-2 border-purple-500">
-                        <CardHeader>
-                            <CardTitle className="flex items-center gap-2">
-                                <CheckCircle className="w-5 h-5 text-purple-500" />
-                                Enhanced Image Ready
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            <div className="rounded-lg overflow-hidden border">
-                                <img src={enhancedImage.url} alt="Enhanced" className="w-full" />
-                            </div>
-                            <p className="text-xs text-muted-foreground text-center">
-                                Professional background applied • Use this for your posts
-                            </p>
-                            {/* Share Button for Enhanced Image */}
-                            <Button
-                                variant="default"
-                                size="lg"
-                                className="w-full bg-primary hover:bg-primary/90 text-white"
-                                onClick={handleShareImage}
-                            >
-                                <Share2 className="w-4 h-4 mr-2" />
-                                Share Enhanced Image
-                            </Button>
-                        </CardContent>
-                    </Card>
-                )}
-
+                {/* Optional: Enhance Image Section - Shows BOTH before and after generation */}
+{imageUrl && (
+    <Card className="mb-6 border-2 border-purple-500/20">
+        <CardHeader className="bg-purple-500/5">
+            <CardTitle className="flex items-center gap-2">
+                <Wand2 className="w-5 h-5 text-purple-500" />
+                <span className="text-lg">
+                    {enhancedImage ? 'Enhanced Image Ready' : 'Optional: Enhance Image'}
+                </span>
+            </CardTitle>
+            <CardDescription>
+                {enhancedImage 
+                    ? 'Professional background applied • Share your enhanced image'
+                    : 'Remove background and add professional studio setting'
+                }
+            </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+            {/* Show Enhanced Image if available */}
+            {enhancedImage && (
+                <div className="rounded-lg overflow-hidden border">
+                    <img src={enhancedImage.url} alt="Enhanced" className="w-full" />
+                </div>
+            )}
+            
+            {/* Show Enhance Button if NOT enhanced yet */}
+            {!enhancedImage && (
+                <Button
+                    variant="outline"
+                    className="w-full border-purple-500 text-purple-500 hover:bg-purple-500/10"
+                    onClick={enhanceProductImage}
+                    disabled={isEnhancingImage}
+                >
+                    {isEnhancingImage ? (
+                        <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Enhancing...
+                        </>
+                    ) : (
+                        <>
+                            <Wand2 className="w-4 h-4 mr-2" />
+                            Enhance with AI
+                        </>
+                    )}
+                </Button>
+            )}
+            
+            {/* Show Share Button ONLY if enhanced */}
+            {enhancedImage && (
+                <Button
+                    variant="default"
+                    size="lg"
+                    className="w-full bg-primary hover:bg-primary/90 text-white"
+                    onClick={handleShareImage}
+                >
+                    <Share2 className="w-4 h-4 mr-2" />
+                    Share Enhanced Image
+                </Button>
+            )}
+        </CardContent>
+    </Card>
+)}
                 {generatedContent && (
                     <Card className="border-2 shadow-lg">
                         <CardHeader>
