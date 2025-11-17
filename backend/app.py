@@ -467,8 +467,12 @@ def enhance_image_with_clipdrop(image_path, product_info=None):
         with open(image_path, 'rb') as img_file:
             image_data = img_file.read()
         
+        print(f"[CLIPDROP] Image size: {len(image_data)} bytes")
+        
         # Step 1: Remove Background
         print("[CLIPDROP] Step 1: Removing background...")
+        print(f"[CLIPDROP] API Key configured: {bool(CLIPDROP_API_KEY)}")
+        
         remove_bg_response = requests.post(
             'https://clipdrop-api.co/remove-background/v1',
             files={'image_file': ('image.jpg', image_data, 'image/jpeg')},
@@ -476,9 +480,12 @@ def enhance_image_with_clipdrop(image_path, product_info=None):
             timeout=30
         )
         
+        print(f"[CLIPDROP] Response status: {remove_bg_response.status_code}")
+        print(f"[CLIPDROP] Response headers: {dict(remove_bg_response.headers)}")
+        
         if remove_bg_response.status_code != 200:
             print(f"[CLIPDROP] Background removal failed: {remove_bg_response.status_code}")
-            print(f"[CLIPDROP] Response: {remove_bg_response.text}")
+            print(f"[CLIPDROP] Response body: {remove_bg_response.text}")
             return None
         
         no_bg_image = remove_bg_response.content
@@ -564,8 +571,13 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
         with open(image_path, 'rb') as img_file:
             image_data = img_file.read()
         
+        print(f"[CLIPDROP] Image size: {len(image_data)} bytes")
+        
         # Step 1: Remove Background (do this once)
         print("[CLIPDROP] Removing background...")
+        print(f"[CLIPDROP] API Key present: {bool(CLIPDROP_API_KEY)}")
+        print(f"[CLIPDROP] API Key length: {len(CLIPDROP_API_KEY) if CLIPDROP_API_KEY else 0}")
+        
         remove_bg_response = requests.post(
             'https://clipdrop-api.co/remove-background/v1',
             files={'image_file': ('image.jpg', image_data, 'image/jpeg')},
@@ -573,8 +585,13 @@ def create_multiple_background_variants(image_path, product_info=None, num_varia
             timeout=30
         )
         
+        print(f"[CLIPDROP] Remove BG Response Status: {remove_bg_response.status_code}")
+        print(f"[CLIPDROP] Remove BG Response Headers: {dict(remove_bg_response.headers)}")
+        print(f"[CLIPDROP] Remove BG Response Body: {remove_bg_response.text[:500]}")
+        
         if remove_bg_response.status_code != 200:
-            print(f"[CLIPDROP] Background removal failed")
+            print(f"[CLIPDROP] Background removal failed: {remove_bg_response.status_code}")
+            print(f"[CLIPDROP] Error details: {remove_bg_response.text}")
             return None
         
         no_bg_image = remove_bg_response.content
