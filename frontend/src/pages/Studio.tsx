@@ -1,4 +1,4 @@
-// src/pages/Studio.tsx - COMPLETE VERSION WITH ORIGINAL FLOW
+// src/pages/Studio.tsx - COMPLETE VERSION WITH SHARE FEATURE
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { Link } from "react-router-dom";
 import { 
@@ -12,7 +12,8 @@ import {
   ArrowLeft,
   CheckCircle,
   Image as ImageIcon,
-  Wand2
+  Wand2,
+  Share2 // ADDED: Import Share2 icon
 } from "lucide-react";
 import { Button } from '@/components/ui/button'; 
 import { Input } from '@/components/ui/input';
@@ -56,6 +57,8 @@ interface EnhancedImage {
     filename: string;
     size: number;
     method: string;
+    variant?: number;
+    background_style?: string; 
 }
 
 const Studio: React.FC = () => {
@@ -327,6 +330,38 @@ const Studio: React.FC = () => {
             setIsEnhancingImage(false);
         }
     };
+    
+    // --- NEW SHARE LOGIC (Added) ---
+    const handleShare = (platform: PlatformContent) => {
+        // Use enhanced image URL if available, otherwise use original uploaded URL
+        const imageToShare = enhancedImage?.url || imageUrl; 
+        
+        // Construct the message
+        const text = platform.content;
+        const url = imageToShare || window.location.href; 
+        const title = `Check out this handcrafted ${collectedInfo?.product_name?.english || 'product'}!`;
+
+        // Check if Web Share API is available
+        if (navigator.share) {
+            navigator.share({
+                title: title,
+                text: text.substring(0, 200) + '...', // Use a snippet of the text
+                url: url
+            }).catch(error => {
+                // User dismissed the share dialog or sharing failed
+                if (error.name !== 'AbortError') {
+                    console.error('Sharing failed via Web Share API', error);
+                    alert(`Sharing failed. Content and Image link copied to clipboard!`);
+                    navigator.clipboard.writeText(`${text}\n\nImage Link: ${url}`);
+                }
+            });
+        } else {
+            // Fallback for desktop browsers: copy everything to clipboard
+            navigator.clipboard.writeText(`${text}\n\nImage Link: ${url}`);
+            alert(`Content and Image Link copied to clipboard for ${platform.platform}!`);
+        }
+    };
+    // -------------------------------
 
     const resetConversation = () => {
         setSessionId(null);
@@ -632,6 +667,7 @@ const Studio: React.FC = () => {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-6">
+                            {/* Display EITHER the enhanced image OR the original uploaded image */}
                             {imageUrl && (
                                 <div className="rounded-lg overflow-hidden border-2 border-primary/20">
                                     <img src={enhancedImage?.url || imageUrl} alt="Product" className="w-full h-auto max-h-96 object-cover" />
@@ -662,14 +698,27 @@ const Studio: React.FC = () => {
                                         </div>
                                     )}
                                     
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="mt-4 border-accent text-accent hover:bg-accent/10"
-                                        onClick={() => navigator.clipboard.writeText(platformContent.content)}
-                                    >
-                                        Copy Content
-                                    </Button>
+                                    {/* NEW: Container for Share and Copy buttons */}
+                                    <div className="flex gap-2 mt-4">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="border-accent text-accent hover:bg-accent/10 flex-1"
+                                            onClick={() => navigator.clipboard.writeText(platformContent.content)}
+                                        >
+                                            Copy Content
+                                        </Button>
+                                        <Button
+                                            variant="default"
+                                            size="sm"
+                                            className="bg-primary hover:bg-primary/90 text-white flex-1"
+                                            onClick={() => handleShare(platformContent)}
+                                            disabled={platformContent.error}
+                                        >
+                                            <Share2 className="w-4 h-4 mr-1" />
+                                            Share
+                                        </Button>
+                                    </div>
                                 </div>
                             ))}
 
