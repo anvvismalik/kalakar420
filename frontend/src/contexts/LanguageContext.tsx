@@ -97,6 +97,7 @@ const translations: Record<Language, Record<string, string>> = {
     'studio.chars': 'chars',
     'studio.copyContent': 'Copy Content',
     'studio.createAnotherProduct': 'Create Another Product',
+    'studio.conversationProgress': 'Conversation Progress',
     
     // 🛠️ STUDIO VISUALS KEYS
     'studio.generateVisuals': 'Generate Visual Mockups/Concepts',
@@ -167,6 +168,13 @@ const translations: Record<Language, Record<string, string>> = {
     'signup.communitySupport': 'Community support',
     'signup.creating': 'Creating...',
 
+    'signup.firstName': 'First Name',
+    'signup.lastName': 'Last Name',
+    'signup.phone': 'Phone Number',
+    'signup.location': 'Location',
+    'signup.email': 'Email Address',
+    
+
     // DEFINITIONS FOR SIGN UP LABELS/PLACEHOLDERS
     'signup.enterEmail': 'Email Address',
     'signup.password': 'Password',
@@ -193,7 +201,7 @@ const translations: Record<Language, Record<string, string>> = {
   'studio.step1.desc': 'Describe your product in Punjabi',
   'studio.step1.ready': 'Ready to start your conversation',
   'studio.step1.aiSpeaking': 'AI Speaking...',
-  'studio.step1.processing': 'Processing...',
+  'studio.processing': 'Processing...',
   'studio.step1.recording': 'Recording...',
   'studio.step1.startConversation': 'Start Conversation',
   'studio.step1.stopRecording': 'Stop Recording',
@@ -412,6 +420,15 @@ const translations: Record<Language, Record<string, string>> = {
     'signup.confirmPasswordPlaceholder': 'ਆਪਣੇ ਪਾਸਵਰਡ ਦੀ ਪੁਸ਼ਟੀ ਕਰੋ',
     'signup.selectCraft': 'ਆਪਣੇ ਦਸਤਕਾਰੀ ਦੀ ਚੋਣ ਕਰੋ',
 
+    
+  "signup.firstName": "ਪਹਿਲਾ ਨਾਮ",
+  "signup.lastName": "ਅੰਤਿਮ ਨਾਮ",
+  "signup.phone": "ਫ਼ੋਨ ਨੰਬਰ",
+  "signup.location": "ਸਥਿਤੀ",
+  "signup.email": "ਈਮੇਲ ਪਤਾ",
+
+
+
     'studio.header.title': 'ਕਲਾਕਾਰ AI',
   'studio.header.subtitle': 'ਸਮੱਗਰੀ ਨਿਰਮਾਣ ਸਟੂਡੀਓ',
   'studio.header.backHome': 'ਹੋਮ ਤੇ ਵਾਪਸ',
@@ -426,7 +443,7 @@ const translations: Record<Language, Record<string, string>> = {
   'studio.step1.desc': 'ਪੰਜਾਬੀ ਵਿੱਚ ਆਪਣੇ ਉਤਪਾਦ ਦਾ ਵਰਣਨ ਕਰੋ',
   'studio.step1.ready': 'ਗੱਲਬਾਤ ਸ਼ੁਰੂ ਕਰਨ ਲਈ ਤਿਆਰ',
   'studio.step1.aiSpeaking': 'AI ਬੋਲ ਰਿਹਾ ਹੈ...',
-  'studio.step1.processing': 'ਪ੍ਰੋਸੈਸ ਹੋ ਰਿਹਾ ਹੈ...',
+  'studio.processing': 'ਪ੍ਰੋਸੈਸ ਹੋ ਰਿਹਾ ਹੈ...',
   'studio.step1.recording': 'ਰਿਕਾਰਡਿੰਗ ਜਾਰੀ ਹੈ...',
   'studio.step1.startConversation': 'ਗੱਲਬਾਤ ਸ਼ੁਰੂ ਕਰੋ',
   'studio.step1.stopRecording': 'ਰਿਕਾਰਡਿੰਗ ਬੰਦ ਕਰੋ',
@@ -446,7 +463,7 @@ const translations: Record<Language, Record<string, string>> = {
   'studio.step3.generateContent': 'ਸਮੱਗਰੀ ਬਣਾਓ',
   
   // Progress
-  'studio.progress.title': 'ਗੱਲਬਾਤ ਦੀ ਪ੍ਰਗਤੀ',
+  'studio.conversationProgress': 'ਗੱਲਬਾਤ ਦੀ ਪ੍ਰਗਤੀ',
   
   // Image Enhancement
   'studio.enhance.title': 'ਵਿਕਲਪਿਕ: ਤਸਵੀਰ ਨੂੰ ਬਿਹਤਰ ਬਣਾਓ',
@@ -622,8 +639,17 @@ const translations: Record<Language, Record<string, string>> = {
     'signup.communitySupport': 'सामुदायिक समर्थन',
     'signup.creating': 'बनाया जा रहा है...',
 
+    
+  "signup.firstName": "पहला नाम",
+  "signup.lastName": "अंतिम नाम",
+  "signup.phone": "फ़ोन नंबर",
+  "signup.location": "स्थान",
+  "signup.email": "ईमेल पता",
+
+
+
     // DEFINITIONS FOR SIGN UP LABELS/PLACEHOLDERS
-    'signup.email': 'ईमेल पता',
+    
     'signup.password': 'पासवर्ड',
     'signup.confirmPassword': 'पासवर्ड की पुष्टि करें',
     'signup.enterFirstNamePlaceholder': 'अपना पहला नाम दर्ज करें',
@@ -649,7 +675,7 @@ const translations: Record<Language, Record<string, string>> = {
   'studio.step1.desc': 'पंजाबी में अपने उत्पाद का वर्णन करें',
   'studio.step1.ready': 'बातचीत शुरू करने के लिए तैयार',
   'studio.step1.aiSpeaking': 'AI बोल रहा है...',
-  'studio.step1.processing': 'प्रोसेस हो रहा है...',
+  'studio.processing': 'प्रोसेस हो रहा है...',
   'studio.step1.recording': 'रिकॉर्डिंग जारी है...',
   'studio.step1.startConversation': 'बातचीत शुरू करें',
   'studio.step1.stopRecording': 'रिकॉर्डिंग बंद करें',
@@ -669,7 +695,7 @@ const translations: Record<Language, Record<string, string>> = {
   'studio.step3.generateContent': 'सामग्री बनाएं',
   
   // Progress
-  'studio.progress.title': 'बातचीत की प्रगति',
+  'studio.conversationProgress': 'बातचीत की प्रगति',
   
   // Image Enhancement
   'studio.enhance.title': 'वैकल्पिक: छवि बेहतर बनाएं',
