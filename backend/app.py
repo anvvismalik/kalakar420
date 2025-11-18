@@ -322,12 +322,12 @@ PLATFORMS = [
         "best_for": "Business stories, craftsmanship"
     },
     {
-        "id": "youtube",
-        "name": "YouTube",
-        "icon": "🎥",
-        "description": "Video descriptions",
-        "char_limit": 5000,
-        "best_for": "Tutorial descriptions, video content"
+        "id": "marketplace",  # CHANGED from "youtube"
+        "name": "Amazon/Flipkart Marketplace",  # NEW
+        "icon": "🛒",  # NEW
+        "description": "Product listings for e-commerce",  # NEW
+        "char_limit": 2000,  # NEW
+        "best_for": "Product descriptions, specifications, features" 
     }
 ]
 
@@ -1107,6 +1107,7 @@ def serve_audio(filename):
 
 
 @app.route('/api/conversation/generate', methods=['POST'])
+@app.route('/api/conversation/generate', methods=['POST'])
 def generate_from_conversation():
     try:
         print("=" * 60)
@@ -1235,7 +1236,58 @@ def generate_from_conversation():
             
             print(f"📝 Generating for {platform['name']}...")
             
-            prompt = f"""You are an expert content creator helping an artisan (Kalakaar) generate engaging social media posts.
+            # Special handling for different platforms
+            if platform_id == 'marketplace':
+                prompt = f"""You are an expert product listing writer for e-commerce marketplaces like Amazon and Flipkart.
+
+Create a professional, SEO-optimized product listing for the following handcrafted product.
+
+--- PRODUCT DETAILS ---
+{product_text}
+--- END DETAILS ---
+
+Requirements:
+- Platform: {platform['name']}
+- Character limit: {platform['char_limit']}
+- Format: Professional e-commerce product description
+- Include:
+  * Compelling product title
+  * Key features (bullet points)
+  * Product description highlighting craftsmanship
+  * Materials and dimensions
+  * Unique selling points
+  * Care instructions if applicable
+- Style: Clear, informative, SEO-friendly
+- NO emojis, use professional language
+- Focus on product benefits and quality
+
+Generate ONLY the product listing content, nothing else."""
+            
+            elif platform_id == 'linkedin':
+                prompt = f"""You are an expert content creator for professional LinkedIn posts.
+
+Create a professional LinkedIn post for the following handcrafted product.
+Analyze the visual details from the image (if provided) and weave them with the textual details below.
+
+--- PRODUCT DETAILS ---
+{product_text}
+--- END DETAILS ---
+
+Requirements:
+- Platform: {platform['name']} ({platform['description']})
+- Character limit: {platform['char_limit']}
+- Style: {platform['best_for']}
+- Tone: Professional, business-focused, authentic
+- CRITICAL: DO NOT use any emojis
+- Focus on: craftsmanship story, business value, artisan skills, cultural heritage
+- Include relevant professional hashtags only (no emoji hashtags)
+- The post should position the artisan as a skilled professional
+
+Generate ONLY the post content, nothing else."""
+            
+            else:
+                # Default prompt for other platforms (Instagram, Facebook, Twitter)
+                prompt = f"""You are an expert content creator helping an artisan (Kalakaar) generate engaging social media posts.
 
 Create a compelling and authentic {platform['name']} post for the following handcrafted product.
 Analyze the visual details from the image (if provided) and weave them with the textual details below.
@@ -1313,7 +1365,7 @@ Generate ONLY the post content, nothing else."""
             'content': platform_content,
             'model_used': 'llama-3.3-70b-versatile (Groq)'
         }), 200
-
+        
     except Exception as e:
         print("=" * 60)
         print("❌ FATAL ERROR IN GENERATE:")
@@ -1324,7 +1376,6 @@ Generate ONLY the post content, nothing else."""
             'details': str(e),
             'traceback': traceback.format_exc()
         }), 500
-
 
 # ==================== ERROR HANDLERS (Unchanged) ====================
 
@@ -1356,3 +1407,4 @@ if __name__ == '__main__':
     
     # For development
     app.run(debug=True, host='0.0.0.0', port=port)
+
