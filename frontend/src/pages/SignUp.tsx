@@ -15,6 +15,8 @@
 // } from "@/components/ui/select";
 // import { toast } from "sonner";
 
+// const API_BASE_URL = 'https://kalakar420.onrender.com/api';
+
 // const SignUp = () => {
 //   const navigate = useNavigate();
 //   const { language, setLanguage, t } = useLanguage();
@@ -52,61 +54,144 @@
 //   const handleSignUp = async (e: React.FormEvent) => {
 //     e.preventDefault();
 
-//     // Validation
+//     // Frontend validation
 //     if (!formData.firstName || !formData.lastName || !formData.email || 
 //         !formData.phone || !formData.location || !formData.craftType || 
 //         !formData.password || !formData.confirmPassword) {
-//       toast.error(language === 'pa' 
-//         ? 'ਕਿਰਪਾ ਕਰਕੇ ਸਾਰੇ ਖੇਤਰ ਭਰੋ' 
-//         : language === 'hi'
-//         ? 'कृपया सभी फ़ੀल्ड भरें'
-//         : 'Please fill in all fields');
+//       toast.error(
+//         language === 'pa' 
+//           ? 'ਕਿਰਪਾ ਕਰਕੇ ਸਾਰੇ ਖੇਤਰ ਭਰੋ' 
+//           : language === 'hi'
+//           ? 'कृपया सभी फ़ील्ड भरें'
+//           : 'Please fill in all fields'
+//       );
 //       return;
 //     }
 
 //     if (!formData.email.includes('@')) {
-//       toast.error(language === 'pa' 
-//         ? 'ਕਿਰਪਾ ਕਰਕੇ ਇੱਕ ਵੈਧ ਈਮੇਲ ਦਰਜ ਕਰੋ' 
-//         : language === 'hi'
-//         ? 'कृपया एक वैध ईमेल दर्ज करें'
-//         : 'Please enter a valid email');
+//       toast.error(
+//         language === 'pa' 
+//           ? 'ਕਿਰਪਾ ਕਰਕੇ ਇੱਕ ਵੈਧ ਈਮੇਲ ਦਰਜ ਕਰੋ' 
+//           : language === 'hi'
+//           ? 'कृपया एक वैध ईमेल दर्ज करें'
+//           : 'Please enter a valid email'
+//       );
+//       return;
+//     }
+
+//     // Check for valid email domains
+//     const emailDomain = formData.email.split('@')[1]?.toLowerCase();
+//     const validDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'];
+//     const hasValidTLD = emailDomain && (emailDomain.endsWith('.com') || emailDomain.endsWith('.org') || 
+//                                          emailDomain.endsWith('.net') || emailDomain.endsWith('.in'));
+    
+//     if (!hasValidTLD && !validDomains.includes(emailDomain || '')) {
+//       toast.error(
+//         language === 'pa'
+//           ? 'ਕਿਰਪਾ ਕਰਕੇ ਇੱਕ ਵੈਧ ਈਮੇਲ ਡੋਮੇਨ ਵਰਤੋ (ਜਿਵੇਂ ਕਿ @gmail.com, @yahoo.com)'
+//           : language === 'hi'
+//           ? 'कृपया एक वैध ईमेल डोमेन का उपयोग करें (जैसे @gmail.com, @yahoo.com)'
+//           : 'Please use a valid email domain (e.g., @gmail.com, @yahoo.com)'
+//       );
 //       return;
 //     }
 
 //     if (formData.password.length < 6) {
-//       toast.error(language === 'pa' 
-//         ? 'ਪਾਸਵਰਡ ਘੱਟੋ-ਘੱਟ 6 ਅੱਖਰਾਂ ਦਾ ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ' 
-//         : language === 'hi'
-//         ? 'पासवर्ड कम से कम 6 अक्षरों का होना चाहिए'
-//         : 'Password must be at least 6 characters');
+//       toast.error(
+//         language === 'pa' 
+//           ? 'ਪਾਸਵਰਡ ਘੱਟੋ-ਘੱਟ 6 ਅੱਖਰਾਂ ਦਾ ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ' 
+//           : language === 'hi'
+//           ? 'पासवर्ड कम से कम 6 अक्षरों का होना चाहिए'
+//           : 'Password must be at least 6 characters'
+//       );
 //       return;
 //     }
 
 //     if (formData.password !== formData.confirmPassword) {
-//       toast.error(language === 'pa' 
-//         ? 'ਪਾਸਵਰਡ ਮੇਲ ਨਹੀਂ ਖਾਂਦੇ' 
-//         : language === 'hi'
-//         ? 'पासवर्ड मेल नहीं खाते'
-//         : 'Passwords do not match');
+//       toast.error(
+//         language === 'pa' 
+//           ? 'ਪਾਸਵਰਡ ਮੇਲ ਨਹੀਂ ਖਾਂਦੇ' 
+//           : language === 'hi'
+//           ? 'पासवर्ड मेल नहीं खाते'
+//           : 'Passwords do not match'
+//       );
 //       return;
 //     }
 
 //     setIsLoading(true);
 
-//     // Simulate API call
-//     setTimeout(() => {
+//     try {
+//       console.log('📝 Attempting signup...');
+      
+//       const response = await fetch(`${API_BASE_URL}/signup`, {
+//         method: 'POST',
+//         headers: {
+//           'Content-Type': 'application/json',
+//         },
+//         credentials: 'include',
+//         body: JSON.stringify({
+//           firstName: formData.firstName.trim(),
+//           lastName: formData.lastName.trim(),
+//           email: formData.email.trim().toLowerCase(),
+//           phone: formData.phone.trim(),
+//           location: formData.location.trim(),
+//           craftType: formData.craftType,
+//           password: formData.password
+//         })
+//       });
+
+//       const data = await response.json();
+//       console.log('Response:', response.status, data);
+
+//       if (!response.ok) {
+//         // Handle specific error cases
+//         if (response.status === 409) {
+//           toast.error(
+//             language === 'pa'
+//               ? 'ਇਸ ਈਮੇਲ ਨਾਲ ਇੱਕ ਖਾਤਾ ਪਹਿਲਾਂ ਹੀ ਮੌਜੂਦ ਹੈ। ਕਿਰਪਾ ਕਰਕੇ ਸਾਈਨ ਇਨ ਕਰੋ।'
+//               : language === 'hi'
+//               ? 'इस ईमेल के साथ एक खाता पहले से मौजूद है। कृपया साइन इन करें।'
+//               : 'An account with this email already exists. Please sign in.'
+//           );
+//         } else if (response.status === 400) {
+//           toast.error(data.error || 'Invalid data provided');
+//         } else {
+//           toast.error(data.error || 'Signup failed');
+//         }
+//         setIsLoading(false);
+//         return;
+//       }
+
+//       // Success!
+//       console.log('✅ Signup successful:', data);
+      
+//       toast.success(
+//         language === 'pa' 
+//           ? 'ਖਾਤਾ ਸਫਲਤਾਪੂਰਵਕ ਬਣਾਇਆ ਗਿਆ!' 
+//           : language === 'hi'
+//           ? 'खाता सफलतापूर्वक बनाया गया!'
+//           : 'Account created successfully!'
+//       );
+      
+//       // Redirect to studio
+//       setTimeout(() => {
+//         navigate("/studio");
+//       }, 500);
+
+//     } catch (error) {
+//       console.error('❌ Signup error:', error);
+//       toast.error(
+//         language === 'pa'
+//           ? 'ਕੁਝ ਗਲਤ ਹੋ ਗਿਆ। ਕਿਰਪਾ ਕਰਕੇ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।'
+//           : language === 'hi'
+//           ? 'कुछ गलत हो गया। कृपया पुनः प्रयास करें।'
+//           : 'Something went wrong. Please try again.'
+//       );
 //       setIsLoading(false);
-//       toast.success(language === 'pa' 
-//         ? 'ਖਾਤਾ ਸਫਲਤਾਪੂਰਵਕ ਬਣਾਇਆ ਗਿਆ!' 
-//         : language === 'hi'
-//         ? 'खाता सफलतापूर्वक बनाया गया!'
-//         : 'Account created successfully!');
-//       navigate("/studio");
-//     }, 1500);
+//     }
 //   };
 
 //   return (
-//     // 🛠️ Applied custom background pattern class
 //     <div className="min-h-screen kalakaar-bg-pattern flex items-center justify-center p-4">
 //       <div className="w-full max-w-6xl">
 //         <div className="flex items-center justify-between mb-8">
@@ -118,7 +203,6 @@
 //             {language === 'pa' ? 'ਹੋਮ ਤੇ ਵਾਪਸ' : language === 'hi' ? 'होम पर वापस' : 'Back to Home'}
 //           </Link>
           
-//           {/* Language Selector */}
 //           <Select value={language} onValueChange={(value: any) => setLanguage(value)}>
 //             <SelectTrigger className="w-[140px]">
 //               <Globe className="w-4 h-4 mr-2" />
@@ -136,7 +220,6 @@
 //           {/* Left Side - Form */}
 //           <div className="p-8 md:p-12 bg-background/50">
 //             <div className="flex flex-col items-center mb-8">
-//               {/* Logo gradient uses new primary/accent */}
 //               <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center mb-3 shadow-lg">
 //                 <Star className="w-6 h-6 text-white fill-white" />
 //               </div>
@@ -171,6 +254,7 @@
 //                       onChange={handleInputChange}
 //                       className="h-12"
 //                       disabled={isLoading}
+//                       autoComplete="given-name"
 //                     />
 //                   </div>
 
@@ -188,6 +272,7 @@
 //                       onChange={handleInputChange}
 //                       className="h-12"
 //                       disabled={isLoading}
+//                       autoComplete="family-name"
 //                     />
 //                   </div>
 //                 </div>
@@ -207,6 +292,7 @@
 //                     onChange={handleInputChange}
 //                     className="h-12"
 //                     disabled={isLoading}
+//                     autoComplete="email"
 //                   />
 //                 </div>
 
@@ -225,6 +311,7 @@
 //                     onChange={handleInputChange}
 //                     className="h-12"
 //                     disabled={isLoading}
+//                     autoComplete="tel"
 //                   />
 //                 </div>
 
@@ -243,6 +330,7 @@
 //                     onChange={handleInputChange}
 //                     className="h-12"
 //                     disabled={isLoading}
+//                     autoComplete="address-level2"
 //                   />
 //                 </div>
 
@@ -286,6 +374,7 @@
 //                       onChange={handleInputChange}
 //                       className="h-12 pr-10"
 //                       disabled={isLoading}
+//                       autoComplete="new-password"
 //                     />
 //                     <button
 //                       type="button"
@@ -314,6 +403,7 @@
 //                       onChange={handleInputChange}
 //                       className="h-12 pr-10"
 //                       disabled={isLoading}
+//                       autoComplete="new-password"
 //                     />
 //                     <button
 //                       type="button"
@@ -329,7 +419,6 @@
 //                 <Button
 //                   type="submit"
 //                   disabled={isLoading}
-//                   // 🛠️ Final button gradient: Primary/Accent for earthy look
 //                   className="w-full h-12 bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-opacity text-white font-medium"
 //                 >
 //                   {isLoading ? (
@@ -353,7 +442,6 @@
 //           </div>
 
 //           {/* Right Side - Gradient Card */}
-//           {/* 🛠️ Final Gradient: Primary (Terracotta) and Accent (Mustard) for a smooth, earthy blend */}
 //           <div className="bg-gradient-to-br from-primary/90 to-accent/90 p-12 text-white flex flex-col justify-center">
 //             <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center mb-8 mx-auto shadow-2xl">
 //               <Star className="w-10 h-10 fill-white animate-pulse" />
@@ -368,27 +456,15 @@
 
 //             <div className="space-y-4">
 //               {[
-//                 {
-//                   key: 'freeContent',
-//                   icon: '✨'
-//                 },
-//                 {
-//                   key: 'multiLanguage',
-//                   icon: '🌍'
-//                 },
-//                 {
-//                   key: 'socialOptimization',
-//                   icon: '📱'
-//                 },
-//                 {
-//                   key: 'communitySupport',
-//                   icon: '👥'
-//                 }
+//                 { key: 'freeContent', icon: '✨' },
+//                 { key: 'multiLanguage', icon: '🌍' },
+//                 { key: 'socialOptimization', icon: '📱' },
+//                 { key: 'communitySupport', icon: '👥' }
 //               ].map((feature, index) => (
 //                 <div 
 //                   key={index} 
 //                   className="flex items-center gap-3 animate-fade-in"
-//                  style={{ animationDelay: `${index * 100}ms` }}
+//                   style={{ animationDelay: `${index * 100}ms` }}
 //                 >
 //                   <div className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center flex-shrink-0 shadow-lg">
 //                     <span className="text-lg">{feature.icon}</span>
@@ -400,7 +476,6 @@
 //               ))}
 //             </div>
 
-//             {/* Stats Section */}
 //             <div className="mt-8 pt-8 border-t border-white/20">
 //               <div className="grid grid-cols-3 gap-4 text-center">
 //                 <div>
@@ -449,6 +524,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 
+// Define API base URL
 const API_BASE_URL = 'https://kalakar420.onrender.com/api';
 
 const SignUp = () => {
@@ -488,88 +564,61 @@ const SignUp = () => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Frontend validation
+    // --- Frontend Validation (unchanged) ---
     if (!formData.firstName || !formData.lastName || !formData.email || 
         !formData.phone || !formData.location || !formData.craftType || 
         !formData.password || !formData.confirmPassword) {
-      toast.error(
-        language === 'pa' 
-          ? 'ਕਿਰਪਾ ਕਰਕੇ ਸਾਰੇ ਖੇਤਰ ਭਰੋ' 
-          : language === 'hi'
-          ? 'कृपया सभी फ़ील्ड भरें'
-          : 'Please fill in all fields'
-      );
+      toast.error(language === 'pa' 
+        ? 'ਕਿਰਪਾ ਕਰਕੇ ਸਾਰੇ ਖੇਤਰ ਭਰੋ' 
+        : language === 'hi'
+        ? 'कृपया सभी फ़ील्ड भरें'
+        : 'Please fill in all fields');
       return;
     }
-
     if (!formData.email.includes('@')) {
-      toast.error(
-        language === 'pa' 
-          ? 'ਕਿਰਪਾ ਕਰਕੇ ਇੱਕ ਵੈਧ ਈਮੇਲ ਦਰਜ ਕਰੋ' 
-          : language === 'hi'
-          ? 'कृपया एक वैध ईमेल दर्ज करें'
-          : 'Please enter a valid email'
-      );
+      toast.error(language === 'pa' 
+        ? 'ਕਿਰਪਾ ਕਰਕੇ ਇੱਕ ਵੈਧ ਈਮੇਲ ਦਰਜ ਕਰੋ' 
+        : language === 'hi'
+        ? 'कृपया एक वैध ईमेल दर्ज करें'
+        : 'Please enter a valid email');
       return;
     }
-
-    // Check for valid email domains
-    const emailDomain = formData.email.split('@')[1]?.toLowerCase();
-    const validDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'];
-    const hasValidTLD = emailDomain && (emailDomain.endsWith('.com') || emailDomain.endsWith('.org') || 
-                                         emailDomain.endsWith('.net') || emailDomain.endsWith('.in'));
-    
-    if (!hasValidTLD && !validDomains.includes(emailDomain || '')) {
-      toast.error(
-        language === 'pa'
-          ? 'ਕਿਰਪਾ ਕਰਕੇ ਇੱਕ ਵੈਧ ਈਮੇਲ ਡੋਮੇਨ ਵਰਤੋ (ਜਿਵੇਂ ਕਿ @gmail.com, @yahoo.com)'
-          : language === 'hi'
-          ? 'कृपया एक वैध ईमेल डोमेन का उपयोग करें (जैसे @gmail.com, @yahoo.com)'
-          : 'Please use a valid email domain (e.g., @gmail.com, @yahoo.com)'
-      );
-      return;
-    }
-
     if (formData.password.length < 6) {
-      toast.error(
-        language === 'pa' 
-          ? 'ਪਾਸਵਰਡ ਘੱਟੋ-ਘੱਟ 6 ਅੱਖਰਾਂ ਦਾ ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ' 
-          : language === 'hi'
-          ? 'पासवर्ड कम से कम 6 अक्षरों का होना चाहिए'
-          : 'Password must be at least 6 characters'
-      );
+      toast.error(language === 'pa' 
+        ? 'ਪਾਸਵਰਡ ਘੱਟੋ-ਘੱਟ 6 ਅੱਖਰਾਂ ਦਾ ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ' 
+        : language === 'hi'
+        ? 'पासवर्ड कम से कम 6 अक्षरों का होना चाहिए'
+        : 'Password must be at least 6 characters');
       return;
     }
-
     if (formData.password !== formData.confirmPassword) {
-      toast.error(
-        language === 'pa' 
-          ? 'ਪਾਸਵਰਡ ਮੇਲ ਨਹੀਂ ਖਾਂਦੇ' 
-          : language === 'hi'
-          ? 'पासवर्ड मेल नहीं खाते'
-          : 'Passwords do not match'
-      );
+      toast.error(language === 'pa' 
+        ? 'ਪਾਸਵਰਡ ਮੇਲ ਨਹੀਂ ਖਾਂਦੇ' 
+        : language === 'hi'
+        ? 'पासवर्ड मेल नहीं खाते'
+        : 'Passwords do not match');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      console.log('📝 Attempting signup...');
+      console.log('📝 Attempting sign up...');
       
+      // --- REAL API CALL TO BACKEND ---
       const response = await fetch(`${API_BASE_URL}/signup`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include',
+        credentials: 'include', 
         body: JSON.stringify({
-          firstName: formData.firstName.trim(),
-          lastName: formData.lastName.trim(),
+          first_name: formData.firstName,
+          last_name: formData.lastName,
           email: formData.email.trim().toLowerCase(),
-          phone: formData.phone.trim(),
-          location: formData.location.trim(),
-          craftType: formData.craftType,
+          phone: formData.phone,
+          location: formData.location,
+          craft_type: formData.craftType,
           password: formData.password
         })
       });
@@ -578,26 +627,24 @@ const SignUp = () => {
       console.log('Response:', response.status, data);
 
       if (!response.ok) {
-        // Handle specific error cases
+        // FIX: Handle specific authentication errors
         if (response.status === 409) {
           toast.error(
             language === 'pa'
-              ? 'ਇਸ ਈਮੇਲ ਨਾਲ ਇੱਕ ਖਾਤਾ ਪਹਿਲਾਂ ਹੀ ਮੌਜੂਦ ਹੈ। ਕਿਰਪਾ ਕਰਕੇ ਸਾਈਨ ਇਨ ਕਰੋ।'
+              ? 'ਇਹ ਈਮੇਲ ਪਹਿਲਾਂ ਹੀ ਰਜਿਸਟਰਡ ਹੈ। ਕਿਰਪਾ ਕਰਕੇ ਸਾਈਨ ਇਨ ਕਰੋ।'
               : language === 'hi'
-              ? 'इस ईमेल के साथ एक खाता पहले से मौजूद है। कृपया साइन इन करें।'
-              : 'An account with this email already exists. Please sign in.'
+              ? 'यह ईमेल पहले से ही पंजीकृत है। कृपया साइन इन करें।'
+              : 'This email is already registered. Please sign in.'
           );
-        } else if (response.status === 400) {
-          toast.error(data.error || 'Invalid data provided');
         } else {
-          toast.error(data.error || 'Signup failed');
+          toast.error(data.error || 'Sign Up failed');
         }
         setIsLoading(false);
         return;
       }
 
       // Success!
-      console.log('✅ Signup successful:', data);
+      console.log('✅ Sign Up successful:', data);
       
       toast.success(
         language === 'pa' 
@@ -613,7 +660,7 @@ const SignUp = () => {
       }, 500);
 
     } catch (error) {
-      console.error('❌ Signup error:', error);
+      console.error('❌ Sign Up error:', error);
       toast.error(
         language === 'pa'
           ? 'ਕੁਝ ਗਲਤ ਹੋ ਗਿਆ। ਕਿਰਪਾ ਕਰਕੇ ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।'
@@ -621,12 +668,13 @@ const SignUp = () => {
           ? 'कुछ गलत हो गया। कृपया पुनः प्रयास करें।'
           : 'Something went wrong. Please try again.'
       );
-      setIsLoading(false);
+    } finally {
+        setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen kalakaar-bg-pattern flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <div className="w-full max-w-6xl">
         <div className="flex items-center justify-between mb-8">
           <Link 
@@ -637,6 +685,7 @@ const SignUp = () => {
             {language === 'pa' ? 'ਹੋਮ ਤੇ ਵਾਪਸ' : language === 'hi' ? 'होम पर वापस' : 'Back to Home'}
           </Link>
           
+          {/* Language Selector */}
           <Select value={language} onValueChange={(value: any) => setLanguage(value)}>
             <SelectTrigger className="w-[140px]">
               <Globe className="w-4 h-4 mr-2" />
@@ -652,12 +701,12 @@ const SignUp = () => {
 
         <div className="bg-card rounded-2xl shadow-xl overflow-hidden grid md:grid-cols-2">
           {/* Left Side - Form */}
-          <div className="p-8 md:p-12 bg-background/50">
+          <div className="p-8 md:p-12">
             <div className="flex flex-col items-center mb-8">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center mb-3 shadow-lg">
+              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center mb-3 shadow-lg">
                 <Star className="w-6 h-6 text-white fill-white" />
               </div>
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                 Kalakaar AI
               </h2>
               <p className="text-sm text-muted-foreground">{t('signup.joinCommunity')}</p>
@@ -853,7 +902,7 @@ const SignUp = () => {
                 <Button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full h-12 bg-gradient-to-r from-primary to-accent hover:opacity-90 transition-opacity text-white font-medium"
+                  className="w-full h-12 bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-opacity text-white font-medium"
                 >
                   {isLoading ? (
                     <>
@@ -876,7 +925,7 @@ const SignUp = () => {
           </div>
 
           {/* Right Side - Gradient Card */}
-          <div className="bg-gradient-to-br from-primary/90 to-accent/90 p-12 text-white flex flex-col justify-center">
+          <div className="bg-gradient-to-br from-primary via-secondary to-accent p-12 text-white flex flex-col justify-center">
             <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center mb-8 mx-auto shadow-2xl">
               <Star className="w-10 h-10 fill-white animate-pulse" />
             </div>
@@ -890,15 +939,27 @@ const SignUp = () => {
 
             <div className="space-y-4">
               {[
-                { key: 'freeContent', icon: '✨' },
-                { key: 'multiLanguage', icon: '🌍' },
-                { key: 'socialOptimization', icon: '📱' },
-                { key: 'communitySupport', icon: '👥' }
+                {
+                  key: 'freeContent',
+                  icon: '✨'
+                },
+                {
+                  key: 'multiLanguage',
+                  icon: '🌍'
+                },
+                {
+                  key: 'socialOptimization',
+                  icon: '📱'
+                },
+                {
+                  key: 'communitySupport',
+                  icon: '👥'
+                }
               ].map((feature, index) => (
                 <div 
                   key={index} 
                   className="flex items-center gap-3 animate-fade-in"
-                  style={{ animationDelay: `${index * 100}ms` }}
+                 style={{ animationDelay: `${index * 100}ms` }}
                 >
                   <div className="w-8 h-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center flex-shrink-0 shadow-lg">
                     <span className="text-lg">{feature.icon}</span>
@@ -910,6 +971,7 @@ const SignUp = () => {
               ))}
             </div>
 
+            {/* Stats Section */}
             <div className="mt-8 pt-8 border-t border-white/20">
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
